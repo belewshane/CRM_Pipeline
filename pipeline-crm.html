@@ -233,27 +233,138 @@
 const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_COLS=['mar','apr','may','jun'];
 
-let deals=JSON.parse(localStorage.getItem('crm_deals4')||'null')||getSampleDeals();
-let schedule=JSON.parse(localStorage.getItem('crm_schedule')||'{}');
+// ── SUPABASE CONFIG ──
+const SB_URL='https://pqnnfnhcyurnbohsbgzz.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBxbm5mbmhjeXVybmJvaHNiZ3p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3Nzk4MzcsImV4cCI6MjA4OTM1NTgzN30.RQfBgDX0uC1GOMnIRPFhezP60bCgHVFsZgpljdEMpPM';
+const SB_HEADERS={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+
+async function sbGet(table, params=''){
+  const r=await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{headers:{...SB_HEADERS,'Accept':'application/json'}});
+  if(!r.ok)throw new Error(await r.text());
+  return r.json();
+}
+async function sbInsert(table, body){
+  const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{...SB_HEADERS,'Prefer':'return=representation'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error(await r.text());
+  return r.json();
+}
+async function sbUpdate(table, id, body){
+  const r=await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`,{method:'PATCH',headers:{...SB_HEADERS,'Prefer':'return=representation'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error(await r.text());
+  return r.json();
+}
+async function sbDelete(table, params){
+  const r=await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{method:'DELETE',headers:SB_HEADERS});
+  if(!r.ok)throw new Error(await r.text());
+}
+
+// Map DB row -> app deal object
+function dbToDeal(r){
+  return{id:r.id,name:r.name,stage:r.stage||'',amount:r.amount||0,arr:r.arr||0,closeDate:r.close_date||'',
+    tier:r.tier||4,sentiment:r.sentiment||'y',pattern:r.pattern||'',nextMove:r.next_move||'',
+    nstw:r.nstw||'',capability:r.capability||'unaware',impact:r.impact||'unaware',
+    urgency:r.urgency||'unaware',path:r.path||'unaware',notes:r.notes||''};
+}
+// Map app deal -> DB fields (no id)
+function dealToDb(d){
+  return{name:d.name,stage:d.stage,amount:d.amount,arr:d.arr,close_date:d.closeDate,
+    tier:d.tier,sentiment:d.sentiment,pattern:d.pattern,next_move:d.nextMove,
+    nstw:d.nstw,capability:d.capability,impact:d.impact,urgency:d.urgency,
+    path:d.path,notes:d.notes,updated_at:new Date().toISOString()};
+}
+
+let deals=[];
+let schedule={};  // weekKey -> {dealId__day -> activity}
 let activeDeal=null;
 let sideTab='conviction';
 let currentView='tier';
+let dbLoaded=false;
+
+function setStatus(msg,type='info'){
+  const el=document.getElementById('import-status');
+  if(!el)return;
+  el.textContent=msg;
+  el.style.display=msg?'block':'none';
+  el.style.color=type==='error'?'var(--red)':type==='ok'?'var(--green)':'var(--text2)';
+  if(type==='ok'||type==='info')setTimeout(()=>{el.style.display='none';},3000);
+}
+
+async function loadDeals(){
+  setStatus('Loading...','info');
+  try{
+    const rows=await sbGet('deals','select=*&order=tier.asc,arr.desc');
+    if(rows.length===0){
+      // First run — seed sample deals
+      const samples=getSampleDeals();
+      for(const d of samples){
+        try{
+          const inserted=await sbInsert('deals',dealToDb(d));
+          d.id=inserted[0].id;
+        }catch(e){console.warn('Seed error',e);}
+      }
+      deals=samples;
+    } else {
+      deals=rows.map(dbToDeal);
+    }
+    dbLoaded=true;
+    setStatus('');
+  }catch(e){
+    setStatus('DB error: '+e.message,'error');
+    deals=getSampleDeals();
+  }
+}
+
+async function loadSchedule(){
+  try{
+    const rows=await sbGet('schedule','select=*');
+    schedule={};
+    rows.forEach(r=>{
+      if(!schedule[r.week_key])schedule[r.week_key]={};
+      schedule[r.week_key][`${r.deal_id}__${r.day}`]={activity:r.activity,rowId:r.id};
+    });
+  }catch(e){console.warn('Schedule load error',e);}
+}
+
+async function saveOneDeal(d){
+  try{
+    if(d.id&&d.id>0&&dbLoaded){
+      await sbUpdate('deals',d.id,dealToDb(d));
+    }
+  }catch(e){setStatus('Save error: '+e.message,'error');}
+}
+
+async function saveDeals(){
+  // Called after bulk changes (CSV import) — upsert all
+  // Individual saves use saveOneDeal
+}
 
 function getSampleDeals(){
   return[
-    {id:1,name:'Civitas Deal',stage:'Proposal',amount:39600,arr:39600,closeDate:'2026-06-15',tier:1,sentiment:'g',pattern:'',nextMove:'Drive MAP and compress paper process. Protect champion from internal drift.',nstw:'Confirm pricing and DM Process',capability:'convinced',impact:'convinced',urgency:'convinced',path:'exploring',notes:''},
-    {id:2,name:'CNY Group Deal',stage:'Negotiation',amount:23100,arr:23100,closeDate:'2026-04-30',tier:1,sentiment:'g',pattern:'',nextMove:'Drive MAP and compress paper process. Protect champion from internal drift.',nstw:'Drive MAP and close',capability:'convinced',impact:'convinced',urgency:'convinced',path:'convinced',notes:''},
-    {id:3,name:'IRG Realty Advisors',stage:'Proposal',amount:300000,arr:300000,closeDate:'2026-05-15',tier:1,sentiment:'g',pattern:'',nextMove:'Slow down. Validate capability before letting timing drive the process.',nstw:'Validate Use Case',capability:'unaware',impact:'exploring',urgency:'convinced',path:'unaware',notes:''},
-    {id:4,name:'The Sporting Company',stage:'Proposal',amount:64800,arr:64800,closeDate:'2026-03-31',tier:1,sentiment:'g',pattern:'',nextMove:'Schedule a process call with procurement.',nstw:'Confirm pricing and DM Process',capability:'convinced',impact:'convinced',urgency:'convinced',path:'exploring',notes:''},
-    {id:5,name:'Edgewood Properties',stage:'Discovery',amount:30000,arr:30000,closeDate:'2026-07-10',tier:2,sentiment:'y',pattern:'',nextMove:'Focus on lowest-state dimension. Drive it to Exploring before spreading attention.',nstw:'Obtain Product Win',capability:'exploring',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
-    {id:6,name:'Endeavoring Deal',stage:'Discovery',amount:29800,arr:29800,closeDate:'2026-03-31',tier:2,sentiment:'y',pattern:'',nextMove:'Focus on lowest-state dimension. Drive it to Exploring before spreading attention.',nstw:'Confirm pricing and DM Process',capability:'exploring',impact:'exploring',urgency:'unaware',path:'unaware',notes:''},
-    {id:7,name:'Mile Deep Impact',stage:'Discovery',amount:29700,arr:29700,closeDate:'2026-03-31',tier:3,sentiment:'r',pattern:'',nextMove:'Start with capability. Confirm fit before exploring impact.',nstw:'Schedule a process call',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
-    {id:8,name:'Oxford Development',stage:'Discovery',amount:30000,arr:30000,closeDate:'2026-06-30',tier:3,sentiment:'r',pattern:'',nextMove:'Focus on lowest-state dimension. Drive it to Exploring before spreading attention.',nstw:'Confirm pricing / flesh out',capability:'exploring',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
+    {id:1,name:'Civitas Deal',stage:'Proposal',amount:39600,arr:39600,closeDate:'2026-06-15',tier:1,sentiment:'g',pattern:'',nextMove:'Drive MAP and compress paper process.',nstw:'Confirm pricing and DM Process',capability:'convinced',impact:'convinced',urgency:'convinced',path:'exploring',notes:''},
+    {id:2,name:'CNY Group Deal',stage:'Negotiation',amount:23100,arr:23100,closeDate:'2026-04-30',tier:1,sentiment:'g',pattern:'',nextMove:'Drive MAP and compress paper process.',nstw:'Drive MAP and close',capability:'convinced',impact:'convinced',urgency:'convinced',path:'convinced',notes:''},
+    {id:3,name:'IRG Realty Advisors',stage:'Proposal',amount:300000,arr:300000,closeDate:'2026-05-15',tier:1,sentiment:'g',pattern:'',nextMove:'Slow down. Validate capability.',nstw:'Validate Use Case',capability:'unaware',impact:'exploring',urgency:'convinced',path:'unaware',notes:''},
+    {id:4,name:'The Sporting Company',stage:'Proposal',amount:64800,arr:64800,closeDate:'2026-03-31',tier:1,sentiment:'g',pattern:'',nextMove:'Schedule a process call.',nstw:'Confirm pricing and DM Process',capability:'convinced',impact:'convinced',urgency:'convinced',path:'exploring',notes:''},
+    {id:5,name:'Edgewood Properties',stage:'Discovery',amount:30000,arr:30000,closeDate:'2026-07-10',tier:2,sentiment:'y',pattern:'',nextMove:'Focus on lowest-state dimension.',nstw:'Obtain Product Win',capability:'exploring',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
+    {id:6,name:'Endeavoring Deal',stage:'Discovery',amount:29800,arr:29800,closeDate:'2026-03-31',tier:2,sentiment:'y',pattern:'',nextMove:'Focus on lowest-state dimension.',nstw:'Confirm pricing and DM Process',capability:'exploring',impact:'exploring',urgency:'unaware',path:'unaware',notes:''},
+    {id:7,name:'Mile Deep Impact',stage:'Discovery',amount:29700,arr:29700,closeDate:'2026-03-31',tier:3,sentiment:'r',pattern:'',nextMove:'Start with capability.',nstw:'Schedule a process call',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
+    {id:8,name:'Oxford Development',stage:'Discovery',amount:30000,arr:30000,closeDate:'2026-06-30',tier:3,sentiment:'r',pattern:'',nextMove:'Focus on lowest-state dimension.',nstw:'Confirm pricing / flesh out',capability:'exploring',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
   ];
 }
 
-function saveDeals(){localStorage.setItem('crm_deals4',JSON.stringify(deals));}
-function saveSchedule(){localStorage.setItem('crm_schedule',JSON.stringify(schedule));}
+async function saveScheduleActivity(dealId,day,weekKey,activity,existingRowId){
+  try{
+    if(existingRowId){
+      if(activity){
+        await sbUpdate('schedule',existingRowId,{activity});
+      } else {
+        await sbDelete('schedule',`id=eq.${existingRowId}`);
+      }
+    } else if(activity){
+      const rows=await sbInsert('schedule',{week_key:weekKey,deal_id:dealId,day,activity});
+      return rows[0]?.id;
+    }
+  }catch(e){console.warn('Schedule save error',e);}
+}
 
 function getCol(dateStr){
   if(!dateStr)return'q3';
@@ -452,7 +563,7 @@ function dropCard(e,newSentiment,newTier){
       document.getElementById('side-meta').textContent=`Tier ${d.tier} · ${fmtK(d.arr)} ARR · ${d.stage||''}`;
       renderSide();
     }
-    saveDeals();
+    saveOneDeal(d);
     renderGridView();
   }
   dragDealId=null;
@@ -482,19 +593,25 @@ function formatSchedWeek(offset){
   return`${MONTHS[mon.getMonth()]} ${mon.getDate()} – ${MONTHS[fri.getMonth()]} ${fri.getDate()}, ${fri.getFullYear()}`;
 }
 
-function setActivity(dealId,day,val){
+async function setActivity(dealId,day,val){
   const wk=getSchedWeekKey(schedWeekOffset);
   if(!schedule[wk])schedule[wk]={};
   const key=`${dealId}__${day}`;
-  schedule[wk][key]=val;
-  saveSchedule();
-  // Re-render just the cell
+  const existing=schedule[wk][key];
+  const existingRowId=existing?.rowId;
+  const newRowId=await saveScheduleActivity(dealId,day,wk,val,existingRowId);
+  if(val){
+    schedule[wk][key]={activity:val,rowId:newRowId||existingRowId};
+  } else {
+    delete schedule[wk][key];
+  }
   const cell=document.getElementById(`cell-${dealId}-${day}`);
   if(cell)cell.innerHTML=cellInner(dealId,day,val);
 }
 
 function cellInner(dealId,day,val){
-  if(!val){
+  const activity=typeof val==='object'?val?.activity:val;
+  if(!activity){
     return`<select class="act-select" onchange="setActivity(${dealId},'${day}',this.value)">
       <option value="">—</option>
       <option value="meeting">Meeting</option>
@@ -502,14 +619,16 @@ function cellInner(dealId,day,val){
       <option value="emailed">Emailed</option>
     </select>`;
   }
-  const label=val.charAt(0).toUpperCase()+val.slice(1);
-  return`<span class="act-chip chip-${val}" onclick="clearActivity(${dealId},'${day}')" title="Click to clear">${label}</span>`;
+  const label=activity.charAt(0).toUpperCase()+activity.slice(1);
+  return`<span class="act-chip chip-${activity}" onclick="clearActivity(${dealId},'${day}')" title="Click to clear">${label}</span>`;
 }
 
-function clearActivity(dealId,day){
+async function clearActivity(dealId,day){
   const wk=getSchedWeekKey(schedWeekOffset);
-  if(schedule[wk])delete schedule[wk][`${dealId}__${day}`];
-  saveSchedule();
+  const key=`${dealId}__${day}`;
+  const existing=schedule[wk]?.[key];
+  await saveScheduleActivity(dealId,day,wk,'',existing?.rowId);
+  if(schedule[wk])delete schedule[wk][key];
   const cell=document.getElementById(`cell-${dealId}-${day}`);
   if(cell)cell.innerHTML=cellInner(dealId,day,'');
 }
@@ -604,7 +723,7 @@ const DIMS=[
 ];
 
 /* ── DEAL PANEL ── */
-function openDeal(id){
+async function openDeal(id){
   activeDeal=deals.find(d=>d.id===id);
   if(!activeDeal)return;
   document.getElementById('side-name').textContent=activeDeal.name;
@@ -613,6 +732,9 @@ function openDeal(id){
   sideTab='conviction';
   document.getElementById('stab-conviction').classList.add('active');
   document.getElementById('stab-details').classList.remove('active');
+  // Load history from DB if not cached
+  const dk=String(activeDeal.id);
+  if(!dealHistories[dk])await loadDealHistory(activeDeal.id);
   renderSide();
   if(currentView!=='schedule')render();
 }
@@ -635,19 +757,21 @@ function renderSide(){
   sideTab==='conviction'?renderConviction():renderDetails();
 }
 
-function setTier(val){
+async function setTier(val){
   if(!activeDeal)return;
   const d=deals.find(x=>x.id===activeDeal.id);
   if(d){d.tier=val;activeDeal=d;}
   document.getElementById('side-meta').textContent=`Tier ${activeDeal.tier} · ${fmtK(activeDeal.arr)} ARR · ${activeDeal.stage||''}`;
+  await saveOneDeal(activeDeal);
   renderConviction();
   render();
 }
 
-function setSentiment(val){
+async function setSentiment(val){
   if(!activeDeal)return;
   const d=deals.find(x=>x.id===activeDeal.id);
   if(d){d.sentiment=val;activeDeal=d;}
+  await saveOneDeal(activeDeal);
   renderConviction();
   render();
 }
@@ -737,11 +861,12 @@ function renderDetails(){
     <button class="save-btn" onclick="saveDeal()">Save</button>`;
 }
 
-function setState(dimIdx,state){
+async function setState(dimIdx,state){
   if(!activeDeal)return;
   const keys=['capability','impact','urgency','path'];
   const d=deals.find(x=>x.id===activeDeal.id);
   if(d){d[keys[dimIdx]]=state;activeDeal=d;}
+  await saveOneDeal(activeDeal);
   renderConviction();
 }
 
@@ -751,17 +876,29 @@ function updateField(key,val){
   if(d){d[key]=val;activeDeal=d;}
 }
 
-function saveDeal(){
+async function saveDeal(){
   const nm=document.getElementById('f-nextmove');
   if(nm&&activeDeal){const d=deals.find(x=>x.id===activeDeal.id);if(d){d.nextMove=nm.value;activeDeal=d;}}
-  saveDeals();render();
+  if(activeDeal)await saveOneDeal(activeDeal);
+  render();
   const btn=document.querySelector('.save-btn');
   if(btn){btn.textContent='Saved ✓';setTimeout(()=>btn.textContent='Save',1500);}
 }
 
-// Per-deal conversation histories
-let dealHistories=JSON.parse(localStorage.getItem('crm_histories')||'{}');
-function saveDealHistories(){localStorage.setItem('crm_histories',JSON.stringify(dealHistories));}
+// Per-deal conversation histories — stored in Supabase deal_histories table
+// In-memory cache: {dealId: [{role, content, sbId}]}
+let dealHistories={};
+
+async function loadDealHistory(dealId){
+  try{
+    const rows=await sbGet('deal_histories',`deal_id=eq.${dealId}&order=created_at.asc`);
+    dealHistories[String(dealId)]=rows.map(r=>({role:r.role,content:r.content,sbId:r.id}));
+  }catch(e){dealHistories[String(dealId)]=[];}
+}
+
+async function saveDealHistories(){
+  // no-op: individual messages are saved inline in askClaude
+}
 
 function renderChatHistory(history){
   const el=document.getElementById('ask-resp');
@@ -831,6 +968,12 @@ You have memory of this conversation. Be direct, specific, and tactical. Referen
   }
 
   try{
+    // Save user message to DB
+    try{
+      const uRows=await sbInsert('deal_histories',{deal_id:d.id,role:'user',content:firstMsg});
+      history[history.length-1].sbId=uRows[0]?.id;
+    }catch(e){console.warn('History save error',e);}
+
     const messages=history.map(m=>({role:m.role,content:m.content}));
     const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
@@ -845,7 +988,13 @@ You have memory of this conversation. Be direct, specific, and tactical. Referen
     const data=await res.json();
     const reply=data.content?.find(b=>b.type==='text')?.text||'No response.';
     history.push({role:'assistant',content:reply});
-    saveDealHistories();
+
+    // Save assistant message to DB
+    try{
+      const aRows=await sbInsert('deal_histories',{deal_id:d.id,role:'assistant',content:reply});
+      history[history.length-1].sbId=aRows[0]?.id;
+    }catch(e){console.warn('History save error',e);}
+
     renderChatHistory(history);
   }catch(e){
     const errMsg='Error: '+e.message;
@@ -857,8 +1006,10 @@ You have memory of this conversation. Be direct, specific, and tactical. Referen
 function clearDealHistory(){
   if(!activeDeal)return;
   const dealKey=String(activeDeal.id);
-  delete dealHistories[dealKey];
-  saveDealHistories();
+  try{
+    await sbDelete('deal_histories',`deal_id=eq.${activeDeal.id}`);
+    delete dealHistories[dealKey];
+  }catch(e){console.warn('Clear history error',e);}
   document.getElementById('ask-resp').style.display='none';
 }
 
