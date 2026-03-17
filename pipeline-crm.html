@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline CRM</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#F7F6F3;--surface:#FFFFFF;--surface2:#F2F1EE;--border:#E4E2DC;--border2:#D0CEC6;
+    --text:#1A1916;--text2:#6B6860;--text3:#9E9C96;
+    --green:#1D9E75;--green-bg:#E1F5EE;--green-text:#085041;--green-row:#F0FAF6;
+    --yellow:#EF9F27;--yellow-bg:#FAEEDA;--yellow-text:#633806;--yellow-row:#FDF6E8;
+    --red:#E24B4A;--red-bg:#FCEBEB;--red-text:#791F1F;--red-row:#FDF0F0;
+    --gray:#888780;--radius:8px;--radius-lg:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);background:var(--bg);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+  /* Nav */
+  .nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:52px;flex-shrink:0;}
+  .nav-brand{font-size:14px;font-weight:600;letter-spacing:-0.02em;display:flex;align-items:center;gap:8px;}
+  .nav-brand span{font-weight:300;color:var(--text2);}
+  .nav-actions{display:flex;gap:8px;align-items:center;}
+  .btn{font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;color:var(--text);cursor:pointer;transition:all .15s;}
+  .btn:hover{background:var(--surface2);}
+  .import-msg{font-size:11px;color:var(--green);font-weight:500;}
+
+  /* View tabs */
+  .view-tabs{background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.5rem;display:flex;align-items:flex-end;gap:0;flex-shrink:0;height:40px;}
+  .view-tab{font-family:'DM Sans',sans-serif;font-size:12px;padding:0 16px;height:40px;border:none;background:transparent;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .12s;white-space:nowrap;}
+  .view-tab:hover{color:var(--text);}
+  .view-tab.active{color:var(--text);font-weight:500;border-bottom-color:var(--text);}
+
+  /* Layout */
+  .layout{display:flex;flex:1;overflow:hidden;}
+  .main-panel{flex:1;overflow-y:auto;padding:1.25rem 1.5rem;}
+  .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;}
+  .panel-title{font-size:13px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;}
+
+  /* Table */
+  .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;}
+  table{width:100%;border-collapse:collapse;table-layout:fixed;}
+  thead th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface2);text-align:left;}
+  thead th.num{text-align:right;}
+  tbody tr{cursor:pointer;border-bottom:1px solid var(--border);}
+  tbody tr:last-child{border-bottom:none;}
+  tr.row-g td{background:var(--green-row);}
+  tr.row-y td{background:var(--yellow-row);}
+  tr.row-r td{background:var(--red-row);}
+  tr.row-g:hover td{background:#e5f7f1;}
+  tr.row-y:hover td{background:#faf0d8;}
+  tr.row-r:hover td{background:#fae5e5;}
+  tr.active-row.row-g td{background:#ddf4ec;}
+  tr.active-row.row-y td{background:#f7eccb;}
+  tr.active-row.row-r td{background:#f7dede;}
+  td{padding:9px 12px;font-size:12px;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  td.num{text-align:right;}
+  .deal-name-g{color:var(--green-text)!important;font-weight:500;}
+  .deal-name-y{color:var(--yellow-text)!important;font-weight:500;}
+  .deal-name-r{color:var(--red-text)!important;font-weight:500;}
+  .stage-badge{font-size:10px;padding:2px 7px;border-radius:20px;border:1px solid;white-space:nowrap;}
+  .stage-g{background:var(--green-bg);color:var(--green-text);border-color:#9FE1CB;}
+  .stage-y{background:var(--yellow-bg);color:var(--yellow-text);border-color:#FAC775;}
+  .stage-r{background:var(--red-bg);color:var(--red-text);border-color:#F7C1C1;}
+  .tier-stripe{width:3px;height:24px;border-radius:2px;display:inline-block;vertical-align:middle;margin-right:6px;}
+  .stripe-1{background:var(--green);}.stripe-2{background:var(--yellow);}.stripe-3{background:var(--red);}.stripe-4{background:var(--gray);}
+  .tier-num{font-size:10px;font-weight:600;color:var(--text3);font-family:'DM Mono',monospace;}
+  .flags{display:flex;gap:3px;}
+  .flag{width:8px;height:8px;border-radius:50%;}
+  .flag-g{background:var(--green);}.flag-y{background:var(--yellow);}.flag-r{background:var(--red);}.flag-e{background:var(--border2);}
+  .arr-pill{display:inline-block;background:var(--green-bg);color:var(--green-text);font-size:11px;font-weight:500;padding:2px 7px;border-radius:4px;font-family:'DM Mono',monospace;}
+  .subtotal-row td{background:var(--surface2)!important;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;border-top:1px solid var(--border2);border-bottom:2px solid var(--border2);padding:7px 12px;cursor:default;}
+  .subtotal-row:hover td{background:var(--surface2)!important;}
+  .subtotal-row td.num{font-family:'DM Mono',monospace;font-size:11px;color:var(--text);}
+  .total-row td{background:var(--surface2)!important;font-weight:500;font-size:11px;color:var(--text2);border-top:2px solid var(--border2);cursor:default;}
+  .total-row:hover td{background:var(--surface2)!important;}
+  .total-row td.num{font-family:'DM Mono',monospace;font-size:11px;color:var(--text);}
+  .next-move-cell{font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  /* 12-box grid */
+  .grid-wrap{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+  .grid-col-header{font-size:11px;font-weight:600;color:var(--text2);text-align:center;padding:6px 0;display:flex;align-items:center;justify-content:center;gap:5px;}
+  .grid-row-label{display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;}
+  .grid-row-label.rl-g{color:var(--green-text);}
+  .grid-row-label.rl-y{color:var(--yellow-text);}
+  .grid-row-label.rl-r{color:var(--red-text);}
+  .grid-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);min-height:100px;padding:10px;display:flex;flex-direction:column;gap:6px;}
+  .grid-box.box-g1{border-color:#9FE1CB;background:#F5FCF9;}
+  .grid-box.box-g2{border-color:#C0DD97;background:#F7FAF2;}
+  .grid-box.box-g3{border-color:var(--border);background:var(--surface);}
+  .grid-box.box-g4{border-color:var(--border);background:var(--surface2);}
+  .grid-box.box-y1{border-color:#FAC775;background:#FDFAF3;}
+  .grid-box.box-y2{border-color:var(--border);background:var(--surface);}
+  .grid-box.box-y3{border-color:var(--border);background:var(--surface2);}
+  .grid-box.box-y4{border-color:var(--border);background:var(--surface2);}
+  .grid-box.box-r1{border-color:var(--border);background:var(--surface);}
+  .grid-box.box-r2{border-color:var(--border);background:var(--surface2);}
+  .grid-box.box-r3{border-color:#F7C1C1;background:#FDF5F5;}
+  .grid-box.box-r4{border-color:#F0A0A0;background:#FDF0F0;}
+  .deal-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:7px 9px;cursor:grab;transition:all .12s;}
+  .deal-card:hover{border-color:var(--border2);background:var(--surface2);}
+  .deal-card.active-card{border-color:var(--border2);background:var(--surface2);}
+  .deal-card:active{cursor:grabbing;opacity:0.7;}
+  .grid-box.drag-over{border-color:var(--border2) !important;outline:2px dashed var(--border2);}
+  .dc-name{font-size:11px;font-weight:500;color:var(--text);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .dc-arr{font-size:10px;font-family:'DM Mono',monospace;color:var(--text2);}
+  .dc-stage{font-size:10px;color:var(--text3);}
+  .grid-empty{font-size:10px;color:var(--text3);text-align:center;padding:12px 0;}
+
+  /* Schedule */
+  .sched-nav{display:flex;align-items:center;gap:8px;}
+  .sched-wk-btn{background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);font-family:'DM Sans',sans-serif;transition:all .12s;}
+  .sched-wk-btn:hover{background:var(--surface2);}
+  .sched-week-label{font-size:13px;font-weight:500;}
+  .sched-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+  .sched-table thead th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface2);text-align:left;}
+  .sched-table thead th.day-col-h{text-align:center;}
+  .sched-table tbody tr{border-bottom:1px solid var(--border);}
+  .sched-table tbody tr:last-child{border-bottom:none;}
+  .sched-table td{padding:5px 8px;font-size:12px;vertical-align:middle;overflow:hidden;white-space:nowrap;}
+  .sched-table td.day-cell{text-align:center;padding:4px 6px;}
+  tr.srow-g td{background:var(--green-row);}
+  tr.srow-y td{background:var(--yellow-row);}
+  tr.srow-r td{background:var(--red-row);}
+  tr.srow-g td.sched-deal-name{color:var(--green-text);font-weight:500;}
+  tr.srow-y td.sched-deal-name{color:var(--yellow-text);font-weight:500;}
+  tr.srow-r td.sched-deal-name{color:var(--red-text);font-weight:500;}
+  .act-select{font-family:'DM Sans',sans-serif;font-size:11px;padding:3px 6px;border-radius:var(--radius);border:1px solid transparent;background:transparent;cursor:pointer;color:var(--text3);width:100%;text-align:center;transition:all .12s;appearance:none;-webkit-appearance:none;}
+  .act-select:hover{border-color:var(--border2);background:var(--surface);}
+  .act-select:focus{outline:none;border-color:var(--border2);}
+  .act-chip{display:inline-block;font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;width:100%;text-align:center;cursor:pointer;}
+  .chip-meeting{background:var(--green-bg);color:var(--green-text);}
+  .chip-called{background:var(--yellow-bg);color:var(--yellow-text);}
+  .chip-emailed{background:#E6F1FB;color:#185FA5;}
+  .cell-wrap{min-height:28px;display:flex;align-items:center;justify-content:center;}
+
+  /* Side panel */
+  .side{width:400px;min-width:400px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+  .side-header{padding:1rem 1.25rem;border-bottom:1px solid var(--border);flex-shrink:0;position:relative;}
+  .side-deal-name{font-size:15px;font-weight:600;letter-spacing:-0.02em;margin-bottom:3px;}
+  .side-meta{font-size:11px;color:var(--text2);}
+  .side-close{position:absolute;right:1rem;top:1rem;background:none;border:none;font-size:18px;cursor:pointer;color:var(--text3);line-height:1;}
+  .side-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;}
+  .side-tab{flex:1;padding:10px;font-size:12px;font-family:'DM Sans',sans-serif;border:none;background:transparent;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .12s;}
+  .side-tab.active{color:var(--text);font-weight:500;border-bottom-color:var(--text);}
+  .side-body{flex:1;overflow-y:auto;padding:1rem 1.25rem;}
+
+  /* Conviction UI */
+  .field-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px;}
+  .tier-selector{display:flex;gap:6px;margin-bottom:14px;}
+  .tier-opt{flex:1;padding:7px 6px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;font-size:12px;font-weight:600;font-family:'DM Mono',monospace;text-align:center;transition:all .12s;color:var(--text2);}
+  .tier-opt:hover{background:var(--surface2);}
+  .tier-opt.active-t1{background:var(--green-bg);border-color:#0F6E56;color:var(--green-text);}
+  .tier-opt.active-t2{background:var(--yellow-bg);border-color:#854F0B;color:var(--yellow-text);}
+  .tier-opt.active-t3{background:var(--red-bg);border-color:#A32D2D;color:var(--red-text);}
+  .tier-opt.active-t4{background:var(--surface2);border-color:var(--gray);color:var(--text2);}
+  .status-selector{display:flex;gap:6px;margin-bottom:14px;}
+  .status-opt{flex:1;padding:7px 6px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;font-size:11px;font-weight:500;font-family:'DM Sans',sans-serif;text-align:center;transition:all .12s;color:var(--text2);}
+  .status-opt:hover{background:var(--surface2);}
+  .status-opt.active-g{background:var(--green-bg);border-color:#0F6E56;color:var(--green-text);}
+  .status-opt.active-y{background:var(--yellow-bg);border-color:#854F0B;color:var(--yellow-text);}
+  .status-opt.active-r{background:var(--red-bg);border-color:#A32D2D;color:var(--red-text);}
+  .dim-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+  .dim-card{background:var(--surface2);border-radius:var(--radius);padding:10px;border:1px solid var(--border);}
+  .dim-label{font-size:11px;font-weight:600;margin-bottom:2px;}
+  .dim-q{font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.4;font-style:italic;}
+  .state-btns{display:flex;flex-direction:column;gap:3px;}
+  .sb{font-size:11px;font-family:'DM Sans',sans-serif;padding:4px 8px;border-radius:20px;border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text2);text-align:left;transition:all .12s;}
+  .sb:hover{background:var(--surface);}
+  .sb.au{background:#F1EFE8;border-color:#5F5E5A;color:#444441;}
+  .sb.ae{background:var(--yellow-bg);border-color:#854F0B;color:var(--yellow-text);}
+  .sb.ac{background:var(--green-bg);border-color:#0F6E56;color:var(--green-text);}
+  .cbar{display:flex;gap:2px;margin-top:8px;}
+  .cs{height:3px;flex:1;border-radius:2px;background:var(--border);}
+  .cs.fu{background:var(--gray);}.cs.fe{background:var(--yellow);}.cs.fc{background:var(--green);}
+  .diag-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:12px;}
+  .diag-pat{font-size:12px;font-weight:600;margin-bottom:4px;}
+  .diag-read{font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:8px;}
+  .diag-move-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:3px;}
+  .diag-move{font-size:12px;line-height:1.55;}
+  .field-row{margin-bottom:10px;}
+  input[type=text],textarea,select{width:100%;font-family:'DM Sans',sans-serif;font-size:12px;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);outline:none;transition:border-color .12s;}
+  input[type=text]:focus,textarea:focus,select:focus{border-color:var(--text2);}
+  textarea{resize:vertical;min-height:64px;}
+  .ask-btn{width:100%;margin-top:8px;padding:8px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text);display:flex;align-items:center;justify-content:center;gap:6px;transition:all .12s;}
+  .ask-btn:hover{background:var(--surface2);}
+  .ask-resp{margin-top:8px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);font-size:12px;line-height:1.6;color:var(--text2);}
+  .save-btn{width:100%;margin-top:12px;padding:9px;border-radius:var(--radius);border:none;background:var(--text);color:white;cursor:pointer;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;transition:all .12s;}
+  .save-btn:hover{background:#2C2C2A;}
+
+  ::-webkit-scrollbar{width:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand">Pipeline <span>/ Northspyre</span></div>
+  <div class="nav-actions">
+    <span id="import-status" class="import-msg" style="display:none"></span>
+    <label class="btn" style="cursor:pointer">Import CSV<input type="file" accept=".csv" id="csv-input" style="display:none"></label>
+  </div>
+</nav>
+
+<div class="view-tabs">
+  <button class="view-tab active" onclick="switchView('tier',this)">By tier</button>
+  <button class="view-tab" onclick="switchView('status',this)">By status</button>
+  <button class="view-tab" onclick="switchView('arr',this)">By ARR</button>
+  <button class="view-tab" onclick="switchView('grid',this)">12-box grid</button>
+  <button class="view-tab" onclick="switchView('schedule',this)">Schedule</button>
+</div>
+
+<div class="layout">
+  <div class="main-panel" id="main-panel"></div>
+
+  <div class="side" id="sidepanel" style="display:none">
+    <div class="side-header">
+      <button class="side-close" onclick="closeSide()">×</button>
+      <div class="side-deal-name" id="side-name"></div>
+      <div class="side-meta" id="side-meta"></div>
+    </div>
+    <div class="side-tabs">
+      <button class="side-tab active" id="stab-conviction" onclick="switchSideTab('conviction')">Conviction</button>
+      <button class="side-tab" id="stab-details" onclick="switchSideTab('details')">Details</button>
+    </div>
+    <div class="side-body" id="side-body"></div>
+  </div>
+</div>
+
+<script>
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_COLS=['mar','apr','may','jun'];
+
+let deals=JSON.parse(localStorage.getItem('crm_deals4')||'null')||getSampleDeals();
+let schedule=JSON.parse(localStorage.getItem('crm_schedule')||'{}');
+let activeDeal=null;
+let sideTab='conviction';
+let currentView='tier';
+
+function getSampleDeals(){
+  return[
+    {id:1,name:'Civitas Deal',stage:'Proposal',amount:39600,arr:39600,closeDate:'2026-06-15',tier:1,sentiment:'g',pattern:'',nextMove:'Drive MAP and compress paper process. Protect champion from internal drift.',nstw:'Confirm pricing and DM Process',capability:'convinced',impact:'convinced',urgency:'convinced',path:'exploring',notes:''},
+    {id:2,name:'CNY Group Deal',stage:'Negotiation',amount:23100,arr:23100,closeDate:'2026-04-30',tier:1,sentiment:'g',pattern:'',nextMove:'Drive MAP and compress paper process. Protect champion from internal drift.',nstw:'Drive MAP and close',capability:'convinced',impact:'convinced',urgency:'convinced',path:'convinced',notes:''},
+    {id:3,name:'IRG Realty Advisors',stage:'Proposal',amount:300000,arr:300000,closeDate:'2026-05-15',tier:1,sentiment:'g',pattern:'',nextMove:'Slow down. Validate capability before letting timing drive the process.',nstw:'Validate Use Case',capability:'unaware',impact:'exploring',urgency:'convinced',path:'unaware',notes:''},
+    {id:4,name:'The Sporting Company',stage:'Proposal',amount:64800,arr:64800,closeDate:'2026-03-31',tier:1,sentiment:'g',pattern:'',nextMove:'Schedule a process call with procurement.',nstw:'Confirm pricing and DM Process',capability:'convinced',impact:'convinced',urgency:'convinced',path:'exploring',notes:''},
+    {id:5,name:'Edgewood Properties',stage:'Discovery',amount:30000,arr:30000,closeDate:'2026-07-10',tier:2,sentiment:'y',pattern:'',nextMove:'Focus on lowest-state dimension. Drive it to Exploring before spreading attention.',nstw:'Obtain Product Win',capability:'exploring',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
+    {id:6,name:'Endeavoring Deal',stage:'Discovery',amount:29800,arr:29800,closeDate:'2026-03-31',tier:2,sentiment:'y',pattern:'',nextMove:'Focus on lowest-state dimension. Drive it to Exploring before spreading attention.',nstw:'Confirm pricing and DM Process',capability:'exploring',impact:'exploring',urgency:'unaware',path:'unaware',notes:''},
+    {id:7,name:'Mile Deep Impact',stage:'Discovery',amount:29700,arr:29700,closeDate:'2026-03-31',tier:3,sentiment:'r',pattern:'',nextMove:'Start with capability. Confirm fit before exploring impact.',nstw:'Schedule a process call',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
+    {id:8,name:'Oxford Development',stage:'Discovery',amount:30000,arr:30000,closeDate:'2026-06-30',tier:3,sentiment:'r',pattern:'',nextMove:'Focus on lowest-state dimension. Drive it to Exploring before spreading attention.',nstw:'Confirm pricing / flesh out',capability:'exploring',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
+  ];
+}
+
+function saveDeals(){localStorage.setItem('crm_deals4',JSON.stringify(deals));}
+function saveSchedule(){localStorage.setItem('crm_schedule',JSON.stringify(schedule));}
+
+function getCol(dateStr){
+  if(!dateStr)return'q3';
+  const m=MONTHS[new Date(dateStr).getMonth()].toLowerCase();
+  return MONTH_COLS.includes(m)?m:'q3';
+}
+
+function fmtK(v){
+  if(!v)return'';
+  if(v>=1000000)return'$'+(v/1000000).toFixed(1)+'M';
+  return'$'+Math.round(v/1000)+'k';
+}
+
+function getFlagDots(s){
+  if(s==='g')return['flag-g','flag-g','flag-e'];
+  if(s==='r')return['flag-r','flag-r','flag-e'];
+  return['flag-y','flag-e','flag-e'];
+}
+
+/* ── TABLE RENDERING ── */
+function tableHTML(sorted, groupKey){
+  const groups=[];
+  const seen=new Set();
+  sorted.forEach(d=>{
+    const k=groupKey(d);
+    if(!seen.has(k)){seen.add(k);groups.push(k);}
+  });
+
+  const gt={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
+  let html='';
+
+  groups.forEach(gk=>{
+    const group=sorted.filter(d=>groupKey(d)===gk);
+    const st={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
+
+    group.forEach(d=>{
+      const col=getCol(d.closeDate);
+      if(st[col]!==undefined)st[col]+=d.arr||0;
+      st.arr+=d.arr||0;
+      if(gt[col]!==undefined)gt[col]+=d.arr||0;
+      gt.arr+=d.arr||0;
+
+      const flags=getFlagDots(d.sentiment);
+      const flagHtml=`<div class="flags">${flags.map(f=>`<div class="flag ${f}"></div>`).join('')}</div>`;
+      const isActive=activeDeal&&activeDeal.id===d.id;
+      const nm=d.nextMove||'';
+      const cells=MONTH_COLS.concat(['q3']).map(c=>{
+        if(c===col&&d.arr)return`<td class="num"><span class="arr-pill">${fmtK(d.arr)}</span></td>`;
+        return`<td class="num"></td>`;
+      }).join('');
+
+      html+=`<tr class="row-${d.sentiment}${isActive?' active-row':''}" onclick="openDeal(${d.id})">
+        <td>${flagHtml}</td>
+        <td><div style="display:flex;align-items:center;gap:6px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}"></div><span class="tier-num">${d.tier}</span></div></td>
+        <td class="deal-name-${d.sentiment}">${d.name}</td>
+        <td><span class="stage-badge stage-${d.sentiment}">${d.stage||''}</span></td>
+        ${cells}
+        <td class="num" style="font-weight:500;font-family:'DM Mono',monospace;">${fmtK(d.arr)}</td>
+        <td class="next-move-cell" title="${nm.replace(/"/g,'&quot;')}">${nm}</td>
+      </tr>`;
+    });
+
+    const subCells=MONTH_COLS.concat(['q3']).map(c=>`<td class="num">${st[c]?fmtK(st[c]):''}</td>`).join('');
+    const subLabel=groupKey===byTier?`Tier ${gk} — ${group.length} deal${group.length!==1?'s':''}`
+      :groupKey===byStatus?({g:'On track',y:'Watch',r:'At risk'}[gk]||gk)+` — ${group.length} deal${group.length!==1?'s':''}`
+      :`${group.length} deal${group.length!==1?'s':''}`;
+    html+=`<tr class="subtotal-row">
+      <td colspan="4">${subLabel}</td>
+      ${subCells}
+      <td class="num">${fmtK(st.arr)}</td>
+      <td></td>
+    </tr>`;
+  });
+
+  // Recalc grand total cleanly
+  const g2={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
+  sorted.forEach(d=>{const c=getCol(d.closeDate);if(g2[c]!==undefined)g2[c]+=d.arr||0;g2.arr+=d.arr||0;});
+  const gtCells=MONTH_COLS.concat(['q3']).map(c=>`<td class="num">${g2[c]?fmtK(g2[c]):''}</td>`).join('');
+  html+=`<tr class="total-row">
+    <td colspan="4" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;">Grand total</td>
+    ${gtCells}
+    <td class="num">${fmtK(g2.arr)}</td>
+    <td></td>
+  </tr>`;
+
+  return`<div class="panel-header">
+    <div class="panel-title">${{tier:'By tier',status:'By status',arr:'By ARR'}[currentView]||'Deals'}</div>
+    <div style="font-size:12px;color:var(--text2);font-family:'DM Mono',monospace;">${fmtK(g2.arr)} total ARR</div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr>
+      <th style="width:52px">Status</th>
+      <th style="width:36px">Tier</th>
+      <th style="width:155px">Deal</th>
+      <th style="width:85px">Stage</th>
+      <th class="num" style="width:70px">Mar</th>
+      <th class="num" style="width:70px">Apr</th>
+      <th class="num" style="width:70px">May</th>
+      <th class="num" style="width:70px">Jun</th>
+      <th class="num" style="width:70px">Q3+</th>
+      <th class="num" style="width:70px">ARR</th>
+      <th style="width:165px">Next move</th>
+    </tr></thead>
+    <tbody>${html}</tbody>
+  </table></div>`;
+}
+
+function byTier(d){return d.tier;}
+function byStatus(d){return d.sentiment;}
+function byArr(d){return 'all';}
+
+/* ── VIEWS ── */
+function renderTierView(){
+  const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
+  document.getElementById('main-panel').innerHTML=tableHTML(sorted,byTier);
+}
+
+function renderStatusView(){
+  const order={g:0,y:1,r:2};
+  const sorted=[...deals].sort((a,b)=>(order[a.sentiment]||0)-(order[b.sentiment]||0)||b.arr-a.arr);
+  document.getElementById('main-panel').innerHTML=tableHTML(sorted,byStatus);
+}
+
+function renderArrView(){
+  const sorted=[...deals].sort((a,b)=>b.arr-a.arr);
+  document.getElementById('main-panel').innerHTML=tableHTML(sorted,byArr);
+}
+
+function renderGridView(){
+  const statuses=['g','y','r'];
+  const tiers=[4,3,2,1];
+  const statusLabels={g:'On track',y:'Watch',r:'At risk'};
+
+  let html=`<div style="display:grid;grid-template-columns:64px repeat(4,minmax(0,1fr));gap:10px;margin-bottom:0;"><div></div>`;
+  tiers.forEach(t=>{
+    const stripe=`<div class="tier-stripe stripe-${t}" style="height:16px;display:inline-block;vertical-align:middle;margin-right:4px;"></div>`;
+    html+=`<div class="grid-col-header">${stripe}Tier ${t}</div>`;
+  });
+  html+='</div>';
+
+  statuses.forEach(s=>{
+    const rowColor={g:'rl-g',y:'rl-y',r:'rl-r'}[s];
+    html+=`<div style="display:grid;grid-template-columns:64px repeat(4,minmax(0,1fr));gap:10px;margin-top:10px;">
+      <div class="grid-row-label ${rowColor}">${statusLabels[s]}</div>`;
+    tiers.forEach(t=>{
+      const boxClass=`box-${s}${t}`;
+      const cellDeals=deals.filter(d=>d.sentiment===s&&d.tier===t);
+      const cards=cellDeals.length
+        ? cellDeals.map(d=>`<div class="deal-card${activeDeal&&activeDeal.id===d.id?' active-card':''}"
+            draggable="true"
+            ondragstart="dragStart(event,${d.id})"
+            ondragend="dragEnd(event)"
+            onclick="openDeal(${d.id})"
+            title="Drag to reclassify">
+            <div class="dc-name">${d.name}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;">
+              <span class="dc-arr">${fmtK(d.arr)}</span>
+              <span class="dc-stage">${d.stage||''}</span>
+            </div>
+          </div>`).join('')
+        : `<div class="grid-empty">—</div>`;
+      html+=`<div class="grid-box ${boxClass}" id="gbox-${s}-${t}"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="dropCard(event,'${s}',${t})">${cards}</div>`;
+    });
+    html+='</div>';
+  });
+
+  const totalArr=deals.reduce((s,d)=>s+(d.arr||0),0);
+  document.getElementById('main-panel').innerHTML=`
+    <div class="panel-header">
+      <div class="panel-title">12-box grid</div>
+      <div style="font-size:12px;color:var(--text2);font-family:'DM Mono',monospace;">${fmtK(totalArr)} total ARR — drag cards to reclassify</div>
+    </div>
+    <div>${html}</div>`;
+}
+
+let dragDealId=null;
+function dragStart(e,id){
+  dragDealId=id;
+  e.dataTransfer.effectAllowed='move';
+  setTimeout(()=>e.target.style.opacity='0.4',0);
+}
+function dragEnd(e){e.target.style.opacity='1';}
+function dropCard(e,newSentiment,newTier){
+  e.preventDefault();
+  document.querySelectorAll('.grid-box').forEach(b=>b.classList.remove('drag-over'));
+  if(dragDealId===null)return;
+  const d=deals.find(x=>x.id===dragDealId);
+  if(d){
+    d.sentiment=newSentiment;
+    d.tier=newTier;
+    if(activeDeal&&activeDeal.id===d.id){
+      activeDeal=d;
+      document.getElementById('side-meta').textContent=`Tier ${d.tier} · ${fmtK(d.arr)} ARR · ${d.stage||''}`;
+      renderSide();
+    }
+    saveDeals();
+    renderGridView();
+  }
+  dragDealId=null;
+}
+
+
+let schedWeekOffset=0;
+
+function getSchedMonday(offset){
+  const now=new Date();
+  const day=now.getDay();
+  const diff=now.getDate()-day+(day===0?-6:1);
+  const mon=new Date(now);
+  mon.setDate(diff+(offset*7));
+  mon.setHours(0,0,0,0);
+  return mon;
+}
+
+function getSchedWeekKey(offset){
+  const d=getSchedMonday(offset);
+  return`sched-${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function formatSchedWeek(offset){
+  const mon=getSchedMonday(offset);
+  const fri=new Date(mon);fri.setDate(mon.getDate()+4);
+  return`${MONTHS[mon.getMonth()]} ${mon.getDate()} – ${MONTHS[fri.getMonth()]} ${fri.getDate()}, ${fri.getFullYear()}`;
+}
+
+function setActivity(dealId,day,val){
+  const wk=getSchedWeekKey(schedWeekOffset);
+  if(!schedule[wk])schedule[wk]={};
+  const key=`${dealId}__${day}`;
+  schedule[wk][key]=val;
+  saveSchedule();
+  // Re-render just the cell
+  const cell=document.getElementById(`cell-${dealId}-${day}`);
+  if(cell)cell.innerHTML=cellInner(dealId,day,val);
+}
+
+function cellInner(dealId,day,val){
+  if(!val){
+    return`<select class="act-select" onchange="setActivity(${dealId},'${day}',this.value)">
+      <option value="">—</option>
+      <option value="meeting">Meeting</option>
+      <option value="called">Called</option>
+      <option value="emailed">Emailed</option>
+    </select>`;
+  }
+  const label=val.charAt(0).toUpperCase()+val.slice(1);
+  return`<span class="act-chip chip-${val}" onclick="clearActivity(${dealId},'${day}')" title="Click to clear">${label}</span>`;
+}
+
+function clearActivity(dealId,day){
+  const wk=getSchedWeekKey(schedWeekOffset);
+  if(schedule[wk])delete schedule[wk][`${dealId}__${day}`];
+  saveSchedule();
+  const cell=document.getElementById(`cell-${dealId}-${day}`);
+  if(cell)cell.innerHTML=cellInner(dealId,day,'');
+}
+
+function renderScheduleView(){
+  const wk=getSchedWeekKey(schedWeekOffset);
+  if(!schedule[wk])schedule[wk]={};
+  const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
+  const days=['Monday','Tuesday','Wednesday','Thursday','Friday'];
+
+  const rows=sorted.map(d=>{
+    const cells=days.map(day=>{
+      const key=`${d.id}__${day}`;
+      const val=schedule[wk][key]||'';
+      return`<td class="day-cell"><div class="cell-wrap" id="cell-${d.id}-${day}">${cellInner(d.id,day,val)}</div></td>`;
+    }).join('');
+
+    return`<tr class="srow-${d.sentiment}">
+      <td style="width:28px;padding:5px 8px;"><div style="display:flex;align-items:center;gap:5px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}" style="height:20px;"></div><span class="tier-num">${d.tier}</span></div></td>
+      <td class="sched-deal-name" style="overflow:hidden;text-overflow:ellipsis;cursor:pointer;" onclick="openDeal(${d.id})">${d.name}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  document.getElementById('main-panel').innerHTML=`
+    <div class="panel-header">
+      <div class="panel-title">Schedule</div>
+      <div class="sched-nav">
+        <button class="sched-wk-btn" onclick="schedWeekOffset--;renderScheduleView()">‹</button>
+        <span class="sched-week-label">${formatSchedWeek(schedWeekOffset)}</span>
+        <button class="sched-wk-btn" onclick="schedWeekOffset++;renderScheduleView()">›</button>
+        <button class="sched-wk-btn" onclick="schedWeekOffset=0;renderScheduleView()">This week</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="sched-table">
+        <thead><tr>
+          <th style="width:32px"></th>
+          <th style="width:160px">Deal</th>
+          <th class="day-col-h" style="width:110px">Monday</th>
+          <th class="day-col-h" style="width:110px">Tuesday</th>
+          <th class="day-col-h" style="width:110px">Wednesday</th>
+          <th class="day-col-h" style="width:110px">Thursday</th>
+          <th class="day-col-h" style="width:110px">Friday</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function render(){
+  if(currentView==='tier')renderTierView();
+  else if(currentView==='status')renderStatusView();
+  else if(currentView==='arr')renderArrView();
+  else if(currentView==='grid')renderGridView();
+  else if(currentView==='schedule')renderScheduleView();
+}
+
+function switchView(view,el){
+  currentView=view;
+  document.querySelectorAll('.view-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  render();
+}
+
+/* ── PATTERNS ── */
+const PATTERNS=[
+  {test:s=>s.every(x=>x==='convinced'),name:'Close-ready',read:'All four dimensions confirmed. Deal is yours to lose.',move:'Drive MAP and compress paper process. Protect champion from internal drift.'},
+  {test:s=>s[0]==='convinced'&&s[1]==='convinced'&&s[2]==='convinced'&&s[3]!=='convinced',name:'Conviction without a path',read:'Strong belief across capability, impact, and urgency — but no clear path to close.',move:'Schedule a process call with procurement or legal. Don\'t let the champion shield you.'},
+  {test:s=>s[0]==='convinced'&&s[1]==='convinced'&&s[2]==='unaware',name:'Believers without a deadline',read:'Strong product conviction but no urgency created.',move:'Find or create a compelling event. Ask EB: what happens if this isn\'t solved by Q3?'},
+  {test:s=>s[0]==='convinced'&&s[1]==='convinced'&&s[2]!=='convinced',name:'Strong on substance, weak on close',read:'Capability and impact confirmed, but urgency is missing.',move:'Qualify urgency with EB directly. Champion conviction without EB urgency doesn\'t close.'},
+  {test:s=>s[0]==='convinced'&&s[1]==='unaware',name:'Feature believer, not a buyer',read:'Capability confirmed but impact not yet personal.',move:'Stop demoing. Ask: what does your team do today when this breaks?'},
+  {test:s=>s[2]==='convinced'&&s[0]!=='convinced',name:'Urgency without capability belief',read:'Real deadline present — but capability unconfirmed.',move:'Slow down. Validate capability before letting timing drive the process.'},
+  {test:s=>s.every(x=>x==='exploring'),name:'Broad exploration, no anchor',read:'Active across all four — nothing resolved. Looks like momentum, might be drift.',move:'Pick one dimension and drive it to Convinced. Capability closes fastest.'},
+  {test:s=>s[0]==='unaware'&&(s[1]==='exploring'||s[2]==='exploring'||s[3]==='exploring'),name:'Exploring without a foundation',read:'Engaged on multiple dimensions but capability unconfirmed.',move:'Anchor capability confirmation before advancing other conversations.'},
+  {test:s=>s[0]==='convinced'&&s[1]!=='convinced',name:'Early stage — capability confirmed',read:'Good foundation. Now the deal needs to become personal.',move:'Move to impact. Get a specific before/after story they personally own.'},
+  {test:s=>s.every(x=>x==='unaware'),name:'Pre-discovery',read:'No conviction established on any dimension.',move:'Start with capability. Confirm fit before exploring impact.'},
+];
+
+function diagnose(states){
+  for(const p of PATTERNS)if(p.test(states))return p;
+  const dims=['Capability','Impact','Urgency','Path'];
+  const stuck=dims.filter((_,i)=>states[i]==='unaware');
+  return{name:'Mixed conviction',read:'Some dimensions moving.'+(stuck.length?' '+stuck.join(' and ')+' not yet engaged.':''),move:'Focus on lowest-state dimension. Drive it to Exploring before spreading attention.'};
+}
+
+const DIMS=[
+  {label:'Capability',q:'"Can it do what I need?"'},
+  {label:'Impact',q:'"Will it actually change things?"'},
+  {label:'Urgency',q:'"Is now the right time to act?"'},
+  {label:'Path',q:'"Can we actually get this done?"'},
+];
+
+/* ── DEAL PANEL ── */
+function openDeal(id){
+  activeDeal=deals.find(d=>d.id===id);
+  if(!activeDeal)return;
+  document.getElementById('side-name').textContent=activeDeal.name;
+  document.getElementById('side-meta').textContent=`Tier ${activeDeal.tier} · ${fmtK(activeDeal.arr)} ARR · ${activeDeal.stage||''}`;
+  document.getElementById('sidepanel').style.display='flex';
+  sideTab='conviction';
+  document.getElementById('stab-conviction').classList.add('active');
+  document.getElementById('stab-details').classList.remove('active');
+  renderSide();
+  if(currentView!=='schedule')render();
+}
+
+function closeSide(){
+  document.getElementById('sidepanel').style.display='none';
+  activeDeal=null;
+  render();
+}
+
+function switchSideTab(tab){
+  sideTab=tab;
+  document.getElementById('stab-conviction').classList.toggle('active',tab==='conviction');
+  document.getElementById('stab-details').classList.toggle('active',tab==='details');
+  renderSide();
+}
+
+function renderSide(){
+  if(!activeDeal)return;
+  sideTab==='conviction'?renderConviction():renderDetails();
+}
+
+function setTier(val){
+  if(!activeDeal)return;
+  const d=deals.find(x=>x.id===activeDeal.id);
+  if(d){d.tier=val;activeDeal=d;}
+  document.getElementById('side-meta').textContent=`Tier ${activeDeal.tier} · ${fmtK(activeDeal.arr)} ARR · ${activeDeal.stage||''}`;
+  renderConviction();
+  render();
+}
+
+function setSentiment(val){
+  if(!activeDeal)return;
+  const d=deals.find(x=>x.id===activeDeal.id);
+  if(d){d.sentiment=val;activeDeal=d;}
+  renderConviction();
+  render();
+}
+
+function renderConviction(){
+  const d=activeDeal;
+  const states=[d.capability||'unaware',d.impact||'unaware',d.urgency||'unaware',d.path||'unaware'];
+  const p=diagnose(states);
+
+  const tierColors=['','active-t1','active-t2','active-t3','active-t4'];
+  const tierHtml=[1,2,3,4].map(t=>`<button class="tier-opt${d.tier===t?' '+tierColors[t]:''}" onclick="setTier(${t})">T${t}</button>`).join('');
+
+  const sentHtml=[{v:'g',label:'On track'},{v:'y',label:'Watch'},{v:'r',label:'At risk'}]
+    .map(o=>`<button class="status-opt${d.sentiment===o.v?' active-'+o.v:''}" onclick="setSentiment('${o.v}')">${o.label}</button>`).join('');
+
+  const dimHtml=DIMS.map((dim,i)=>{
+    const cur=states[i];
+    const bc=cur==='unaware'?['fu','','']:cur==='exploring'?['fu','fe','']:['fu','fe','fc'];
+    return`<div class="dim-card">
+      <div class="dim-label">${dim.label}</div>
+      <div class="dim-q">${dim.q}</div>
+      <div class="state-btns">
+        <button class="sb ${cur==='unaware'?'au':''}" onclick="setState(${i},'unaware')">Unaware</button>
+        <button class="sb ${cur==='exploring'?'ae':''}" onclick="setState(${i},'exploring')">Exploring</button>
+        <button class="sb ${cur==='convinced'?'ac':''}" onclick="setState(${i},'convinced')">Convinced</button>
+      </div>
+      <div class="cbar">${bc.map(c=>`<div class="cs ${c}"></div>`).join('')}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('side-body').innerHTML=`
+    <div class="field-lbl" style="margin-bottom:6px">Tier</div>
+    <div class="tier-selector">${tierHtml}</div>
+    <div class="field-lbl" style="margin-bottom:6px">Status</div>
+    <div class="status-selector">${sentHtml}</div>
+    <div class="dim-grid">${dimHtml}</div>
+    <div class="diag-card">
+      <div class="diag-pat">${p.name}</div>
+      <div class="diag-read">${p.read}</div>
+      <div class="diag-move-lbl">Next move</div>
+      <div class="diag-move">${p.move}</div>
+    </div>
+    <div class="field-row">
+      <div class="field-lbl">Pattern override</div>
+      <input type="text" value="${(d.pattern||p.name).replace(/"/g,'&quot;')}" onchange="updateField('pattern',this.value)">
+    </div>
+    <div class="field-row">
+      <div class="field-lbl">Next move override</div>
+      <input type="text" id="f-nextmove" value="${(d.nextMove||p.move).replace(/"/g,'&quot;')}" onchange="updateField('nextMove',this.value);render()">
+    </div>
+    <div class="field-row">
+      <div class="field-lbl">Notes / context</div>
+      <textarea onchange="updateField('notes',this.value)">${d.notes||''}</textarea>
+    </div>
+    <div class="field-lbl" style="margin-bottom:6px;margin-top:4px;">Ask Claude</div>
+    <div id="ask-resp" style="display:none;max-height:260px;overflow-y:auto;" class="ask-resp"></div>
+    <div style="display:flex;gap:6px;margin-top:8px;">
+      <input type="text" id="ask-input" placeholder="Ask about this deal..." onkeydown="if(event.key==='Enter')askClaude()" style="flex:1;font-size:12px;">
+      <button onclick="askClaude()" style="padding:7px 12px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;white-space:nowrap;">✦ Ask</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+      <button onclick="askClaude()" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;" id="btn-start-convo">Start coaching session</button>
+      <button onclick="clearDealHistory()" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;">Clear history</button>
+    </div>
+    <button class="save-btn" onclick="saveDeal()">Save</button>`;
+
+  // Load existing history for this deal
+  const dealKey=String(d.id);
+  if(dealHistories[dealKey]&&dealHistories[dealKey].length>0){
+    setTimeout(()=>{
+      renderChatHistory(dealHistories[dealKey]);
+      const btn=document.getElementById('btn-start-convo');
+      if(btn)btn.style.display='none';
+    },0);
+  }
+}
+
+function renderDetails(){
+  const d=activeDeal;
+  const tierOpts=[1,2,3,4].map(v=>`<option value="${v}" ${d.tier===v?'selected':''}>Tier ${v}</option>`).join('');
+  document.getElementById('side-body').innerHTML=`
+    <div class="field-row"><div class="field-lbl">Tier</div><select onchange="updateField('tier',parseInt(this.value));render()">${tierOpts}</select></div>
+    <div class="field-row"><div class="field-lbl">NSTW</div><input type="text" value="${(d.nstw||'').replace(/"/g,'&quot;')}" onchange="updateField('nstw',this.value)"></div>
+    <div class="field-row"><div class="field-lbl">Deal stage</div><input type="text" value="${(d.stage||'').replace(/"/g,'&quot;')}" onchange="updateField('stage',this.value)"></div>
+    <div class="field-row"><div class="field-lbl">Close date</div><input type="text" value="${d.closeDate||''}" placeholder="YYYY-MM-DD" onchange="updateField('closeDate',this.value);render()"></div>
+    <div class="field-row"><div class="field-lbl">ARR</div><input type="text" value="${d.arr||''}" onchange="updateField('arr',parseFloat(this.value)||0);render()"></div>
+    <button class="save-btn" onclick="saveDeal()">Save</button>`;
+}
+
+function setState(dimIdx,state){
+  if(!activeDeal)return;
+  const keys=['capability','impact','urgency','path'];
+  const d=deals.find(x=>x.id===activeDeal.id);
+  if(d){d[keys[dimIdx]]=state;activeDeal=d;}
+  renderConviction();
+}
+
+function updateField(key,val){
+  if(!activeDeal)return;
+  const d=deals.find(x=>x.id===activeDeal.id);
+  if(d){d[key]=val;activeDeal=d;}
+}
+
+function saveDeal(){
+  const nm=document.getElementById('f-nextmove');
+  if(nm&&activeDeal){const d=deals.find(x=>x.id===activeDeal.id);if(d){d.nextMove=nm.value;activeDeal=d;}}
+  saveDeals();render();
+  const btn=document.querySelector('.save-btn');
+  if(btn){btn.textContent='Saved ✓';setTimeout(()=>btn.textContent='Save',1500);}
+}
+
+// Per-deal conversation histories
+let dealHistories=JSON.parse(localStorage.getItem('crm_histories')||'{}');
+function saveDealHistories(){localStorage.setItem('crm_histories',JSON.stringify(dealHistories));}
+
+function renderChatHistory(history){
+  const el=document.getElementById('ask-resp');
+  if(!el)return;
+  if(!history||history.length===0){el.style.display='none';return;}
+  el.style.display='block';
+  el.innerHTML=history.map(m=>{
+    const isUser=m.role==='user';
+    return`<div style="margin-bottom:10px;">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:${isUser?'var(--text3)':'var(--green-text)'};margin-bottom:3px;">${isUser?'You':'Coach'}</div>
+      <div style="font-size:12px;line-height:1.6;color:${isUser?'var(--text2)':'var(--text)'};">${m.content.replace(/\n/g,'<br>')}</div>
+    </div>`;
+  }).join('<hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">');
+  el.scrollTop=el.scrollHeight;
+}
+
+async function askClaude(){
+  if(!activeDeal)return;
+  const d=activeDeal;
+  const inp=document.getElementById('ask-input');
+  const userMsg=inp?inp.value.trim():'';
+
+  const states=[d.capability||'unaware',d.impact||'unaware',d.urgency||'unaware',d.path||'unaware'];
+  const p=diagnose(states);
+
+  const dealKey=String(d.id);
+  if(!dealHistories[dealKey])dealHistories[dealKey]=[];
+  const history=dealHistories[dealKey];
+
+  const systemPrompt=`You are an expert B2B sales coach helping a rep manage a specific deal. Here is the current deal context — refer back to this throughout the conversation:
+
+Deal: ${d.name}
+ARR: ${fmtK(d.arr)}
+Stage: ${d.stage}
+Close date: ${d.closeDate||'unknown'}
+Rep notes: ${d.notes||'None'}
+Conviction map:
+- Capability (Can it do what I need?): ${states[0]}
+- Impact (Will it actually change things?): ${states[1]}
+- Urgency (Is now the right time?): ${states[2]}
+- Path (Can we get this done?): ${states[3]}
+Current pattern: ${p.name}
+Suggested next move: ${p.move}
+
+You have memory of this conversation. Be direct, specific, and tactical. Reference prior messages when relevant.`;
+
+  // First message auto-prompt if history is empty
+  const firstMsg=history.length===0&&!userMsg
+    ?`Give me 3 specific questions I should ask on my next call to advance the weakest conviction dimension.`
+    :userMsg;
+
+  if(!firstMsg)return;
+  if(inp)inp.value='';
+
+  history.push({role:'user',content:firstMsg});
+  renderChatHistory(history);
+
+  const respEl=document.getElementById('ask-resp');
+  if(respEl){
+    respEl.style.display='block';
+    // Add thinking indicator to last entry
+    const thinking=document.createElement('div');
+    thinking.id='thinking-indicator';
+    thinking.style.cssText='font-size:11px;color:var(--text3);font-style:italic;margin-top:6px;';
+    thinking.textContent='Thinking...';
+    respEl.appendChild(thinking);
+  }
+
+  try{
+    const messages=history.map(m=>({role:m.role,content:m.content}));
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:400,
+        system:systemPrompt,
+        messages
+      })
+    });
+    const data=await res.json();
+    const reply=data.content?.find(b=>b.type==='text')?.text||'No response.';
+    history.push({role:'assistant',content:reply});
+    saveDealHistories();
+    renderChatHistory(history);
+  }catch(e){
+    const errMsg='Error: '+e.message;
+    history.push({role:'assistant',content:errMsg});
+    renderChatHistory(history);
+  }
+}
+
+function clearDealHistory(){
+  if(!activeDeal)return;
+  const dealKey=String(activeDeal.id);
+  delete dealHistories[dealKey];
+  saveDealHistories();
+  document.getElementById('ask-resp').style.display='none';
+}
+
+/* ── CSV IMPORT ── */
+document.getElementById('csv-input').addEventListener('change',function(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    const lines=ev.target.result.trim().split('\n');
+    const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
+    let imported=0;
+    for(let i=1;i<lines.length;i++){
+      const vals=lines[i].split(',').map(v=>v.trim().replace(/^"|"$/g,''));
+      const row={};headers.forEach((h,j)=>row[h]=vals[j]||'');
+      const name=row['dealname']||row['name']||row['deal']||'';
+      if(!name)continue;
+      const hubFields={name,closeDate:row['closedate']||row['close']||'',stage:row['dealstage']||row['stage']||'',amount:parseFloat(row['amount'])||0,arr:parseFloat(row['arr'])||parseFloat(row['amount'])||0};
+      const existing=deals.find(d=>d.name.toLowerCase()===name.toLowerCase());
+      if(existing)Object.assign(existing,hubFields);
+      else deals.push({id:Date.now()+i,...hubFields,tier:4,sentiment:'y',pattern:'',nextMove:'',nstw:'',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''});
+      imported++;
+    }
+    saveDeals();render();
+    const msg=document.getElementById('import-status');
+    msg.textContent=`${imported} deals merged`;msg.style.display='block';
+    setTimeout(()=>msg.style.display='none',3000);
+  };
+  reader.readAsText(file);e.target.value='';
+});
+
+render();
+</script>
+</body>
+</html>
