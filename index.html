@@ -853,7 +853,23 @@ function renderDetails(){
     <div class="field-row"><div class="field-lbl">Deal stage</div><input type="text" value="${(d.stage||'').replace(/"/g,'&quot;')}" onchange="updateField('stage',this.value)"></div>
     <div class="field-row"><div class="field-lbl">Close date</div><input type="text" value="${d.closeDate||''}" placeholder="YYYY-MM-DD" onchange="updateField('closeDate',this.value);render()"></div>
     <div class="field-row"><div class="field-lbl">ARR</div><input type="text" value="${d.arr||''}" onchange="updateField('arr',parseFloat(this.value)||0);render()"></div>
-    <button class="save-btn" onclick="saveDeal()">Save</button>`;
+    <button class="save-btn" onclick="saveDeal()">Save</button>
+    <button onclick="deleteDeal()" style="width:100%;margin-top:8px;padding:9px;border-radius:var(--radius);border:1px solid #F7C1C1;background:transparent;color:var(--red-text);cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;transition:all .12s;" onmouseover="this.style.background='var(--red-bg)'" onmouseout="this.style.background='transparent'">Delete deal</button>`;
+}
+
+async function deleteDeal(){
+  if(!activeDeal)return;
+  if(!confirm(`Delete "${activeDeal.name}"? This cannot be undone.`))return;
+  const id=activeDeal.id;
+  try{
+    await sbDelete('deals',`id=eq.${id}`);
+    deals=deals.filter(d=>d.id!==id);
+    closeSide();
+    render();
+    setStatus('Deal deleted','ok');
+  }catch(e){
+    setStatus('Delete error: '+e.message,'error');
+  }
 }
 
 async function setState(dimIdx,state){
