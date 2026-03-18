@@ -209,6 +209,7 @@
   <button class="view-tab active" onclick="switchView('tier',this)">By tier</button>
   <button class="view-tab" onclick="switchView('status',this)">By status</button>
   <button class="view-tab" onclick="switchView('arr',this)">By ARR</button>
+  <button class="view-tab" onclick="switchView('conviction',this)">Conviction</button>
   <button class="view-tab" onclick="switchView('grid',this)">12-box grid</button>
   <button class="view-tab" onclick="switchView('schedule',this)">Schedule</button>
 </div>
@@ -489,6 +490,55 @@ function renderArrView(){
   document.getElementById('main-panel').innerHTML=tableHTML(sorted,byArr);
 }
 
+function renderConvictionView(){
+  if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
+  const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
+
+  const stateChip=(state)=>{
+    if(state==='convinced')return`<span style="font-size:11px;font-weight:500;padding:2px 9px;border-radius:20px;background:var(--green-bg);color:var(--green-text);border:1px solid #9FE1CB;">Convinced</span>`;
+    if(state==='exploring')return`<span style="font-size:11px;font-weight:500;padding:2px 9px;border-radius:20px;background:var(--yellow-bg);color:var(--yellow-text);border:1px solid #FAC775;">Exploring</span>`;
+    return`<span style="font-size:11px;padding:2px 9px;border-radius:20px;background:#F1EFE8;color:#5F5E5A;border:1px solid #D3D1C7;">Unaware</span>`;
+  };
+
+  const rows=sorted.map(d=>{
+    const isActive=activeDeal&&activeDeal.id===d.id;
+    const flags=getFlagDots(d.sentiment);
+    const flagHtml=`<div class="flags">${flags.map(f=>`<div class="flag ${f}"></div>`).join('')}</div>`;
+    return`<tr class="row-${d.sentiment}${isActive?' active-row':''}" onclick="openDeal(${d.id})" style="cursor:pointer;">
+      <td>${flagHtml}</td>
+      <td><div style="display:flex;align-items:center;gap:6px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}"></div><span class="tier-num">${d.tier}</span></div></td>
+      <td class="deal-name-${d.sentiment}">${d.name}</td>
+      <td style="text-align:center;">${stateChip(d.capability||'unaware')}</td>
+      <td style="text-align:center;">${stateChip(d.impact||'unaware')}</td>
+      <td style="text-align:center;">${stateChip(d.urgency||'unaware')}</td>
+      <td style="text-align:center;">${stateChip(d.path||'unaware')}</td>
+      <td style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(d.nextMove||'').replace(/"/g,'&quot;')}">${d.nextMove||''}</td>
+    </tr>`;
+  }).join('');
+
+  const totalArr=deals.reduce((s,d)=>s+(d.arr||0),0);
+  document.getElementById('main-panel').innerHTML=`
+    <div class="panel-header">
+      <div class="panel-title">Conviction</div>
+      <div style="font-size:12px;color:var(--text2);font-family:'DM Mono',monospace;">${fmtK(totalArr)} total ARR</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th style="width:52px">Status</th>
+          <th style="width:36px">Tier</th>
+          <th style="width:160px">Deal</th>
+          <th style="width:100px;text-align:center;">Capability</th>
+          <th style="width:100px;text-align:center;">Impact</th>
+          <th style="width:100px;text-align:center;">Urgency</th>
+          <th style="width:100px;text-align:center;">Path</th>
+          <th>Next move</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function renderGridView(){
   const statuses=['g','y','r'];
   const tiers=[4,3,2,1];
@@ -709,6 +759,7 @@ function render(){
   if(currentView==='tier')renderTierView();
   else if(currentView==='status')renderStatusView();
   else if(currentView==='arr')renderArrView();
+  else if(currentView==='conviction')renderConvictionView();
   else if(currentView==='grid')renderGridView();
   else if(currentView==='schedule')renderScheduleView();
 }
@@ -1024,7 +1075,7 @@ You have memory of this conversation. Be direct, specific, and tactical. Referen
     }catch(e){console.warn('History save error',e);}
 
     const messages=history.map(m=>({role:m.role,content:m.content}));
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
+    const res=await fetch('/.netlify/functions/ask-claude',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
