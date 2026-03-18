@@ -290,27 +290,13 @@ function setStatus(msg,type='info'){
 }
 
 async function loadDeals(){
-  setStatus('Loading...','info');
   try{
     const rows=await sbGet('deals','select=*&order=tier.asc,arr.desc');
-    if(rows.length===0){
-      // First run — seed sample deals
-      const samples=getSampleDeals();
-      for(const d of samples){
-        try{
-          const inserted=await sbInsert('deals',dealToDb(d));
-          d.id=inserted[0].id;
-        }catch(e){console.warn('Seed error',e);}
-      }
-      deals=samples;
-    } else {
-      deals=rows.map(dbToDeal);
-    }
+    deals=rows.map(dbToDeal);
     dbLoaded=true;
-    setStatus('');
   }catch(e){
     setStatus('DB error: '+e.message,'error');
-    deals=getSampleDeals();
+    deals=[];
   }
 }
 
@@ -478,17 +464,20 @@ function byArr(d){return 'all';}
 
 /* ── VIEWS ── */
 function renderTierView(){
+  if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
   const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
   document.getElementById('main-panel').innerHTML=tableHTML(sorted,byTier);
 }
 
 function renderStatusView(){
+  if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
   const order={g:0,y:1,r:2};
   const sorted=[...deals].sort((a,b)=>(order[a.sentiment]||0)-(order[b.sentiment]||0)||b.arr-a.arr);
   document.getElementById('main-panel').innerHTML=tableHTML(sorted,byStatus);
 }
 
 function renderArrView(){
+  if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
   const sorted=[...deals].sort((a,b)=>b.arr-a.arr);
   document.getElementById('main-panel').innerHTML=tableHTML(sorted,byArr);
 }
@@ -685,6 +674,13 @@ function render(){
   else if(currentView==='arr')renderArrView();
   else if(currentView==='grid')renderGridView();
   else if(currentView==='schedule')renderScheduleView();
+}
+
+function emptyState(){
+  return`<div style="padding:3rem;text-align:center;color:var(--text3);">
+    <div style="font-size:13px;margin-bottom:8px;">No deals yet</div>
+    <div style="font-size:12px;">Import your HubSpot CSV to get started</div>
+  </div>`;
 }
 
 function switchView(view,el){
@@ -1040,7 +1036,20 @@ document.getElementById('csv-input').addEventListener('change',function(e){
   reader.readAsText(file);e.target.value='';
 });
 
-render();
+// ── INIT ──
+async function init(){
+  // Show loading state but keep tabs interactive
+  document.getElementById('main-panel').innerHTML='<div style="padding:2rem;color:var(--text3);font-size:13px;">Loading pipeline...</div>';
+  try{
+    await Promise.all([loadDeals(), loadSchedule()]);
+  }catch(e){
+    console.warn('Init error',e);
+    deals=[];
+  }
+  render();
+}
+
+init();
 </script>
 </body>
 </html>
