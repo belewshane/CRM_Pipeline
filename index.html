@@ -190,6 +190,18 @@
   .save-btn{width:100%;margin-top:12px;padding:9px;border-radius:var(--radius);border:none;background:var(--text);color:white;cursor:pointer;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;transition:all .12s;}
   .save-btn:hover{background:#2C2C2A;}
 
+
+  /* Scenario planning */
+  .scenario-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:1rem;}
+  .scenario-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px 14px;}
+  .scenario-card.has-value{border-color:#9FE1CB;background:var(--green-bg);}
+  .scenario-card-label{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px;}
+  .scenario-card-value{font-size:18px;font-weight:600;font-family:'DM Mono',monospace;color:var(--text);letter-spacing:-0.02em;}
+  .scenario-card.has-value .scenario-card-label{color:var(--green-text);}
+  .scenario-card.has-value .scenario-card-value{color:var(--green-text);}
+  .scenario-card.total-card{border-color:var(--border2);background:var(--surface2);}
+  .scenario-card.total-card .scenario-card-value{font-size:20px;}
+  .scenario-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--green);flex-shrink:0;}
   ::-webkit-scrollbar{width:6px;}
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
@@ -211,6 +223,7 @@
   <button class="view-tab" onclick="switchView('arr',this)">By ARR</button>
   <button class="view-tab" onclick="switchView('conviction',this)">Conviction</button>
   <button class="view-tab" onclick="switchView('grid',this)">12-box grid</button>
+  <button class="view-tab" onclick="switchView('scenario',this)">Scenario</button>
   <button class="view-tab" onclick="switchView('schedule',this)">Schedule</button>
 </div>
 
@@ -755,12 +768,124 @@ function renderScheduleView(){
     </div>`;
 }
 
+
+// ── SCENARIO PLANNING ──
+let scenarioChecked = new Set(); // deal ids checked in scenario
+
+function toggleScenario(id){
+  if(scenarioChecked.has(id)) scenarioChecked.delete(id);
+  else scenarioChecked.add(id);
+  renderScenarioView();
+}
+
+function renderScenarioView(){
+  if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
+  const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
+
+  // Calculate sums
+  const sums={mar:0,apr:0,may:0,jun:0,q3:0,total:0};
+  deals.filter(d=>scenarioChecked.has(d.id)).forEach(d=>{
+    const col=getCol(d.closeDate);
+    if(sums[col]!==undefined)sums[col]+=d.arr||0;
+    sums.total+=d.arr||0;
+  });
+
+  const colLabels={mar:'Mar',apr:'Apr',may:'May',jun:'Jun',q3:'Q3+'};
+  const summaryCards=Object.entries(colLabels).map(([k,label])=>`
+    <div class="scenario-card${sums[k]?' has-value':''}">
+      <div class="scenario-card-label">${label}</div>
+      <div class="scenario-card-value">${sums[k]?fmtK(sums[k]):'—'}</div>
+    </div>`).join('');
+
+  const totalCard=`<div class="scenario-card total-card">
+    <div class="scenario-card-label">Selected total</div>
+    <div class="scenario-card-value">${sums.total?fmtK(sums.total):'—'}</div>
+  </div>`;
+
+  const tiers=[...new Set(sorted.map(d=>d.tier))].sort();
+  let rows='';
+
+  tiers.forEach(tier=>{
+    const group=sorted.filter(d=>d.tier===tier);
+    const st={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
+
+    group.forEach(d=>{
+      const col=getCol(d.closeDate);
+      if(st[col]!==undefined)st[col]+=d.arr||0;
+      st.arr+=d.arr||0;
+
+      const isChecked=scenarioChecked.has(d.id);
+      const isActive=activeDeal&&activeDeal.id===d.id;
+      const flags=getFlagDots(d.sentiment);
+      const flagHtml=`<div class="flags">${flags.map(f=>`<div class="flag ${f}"></div>`).join('')}</div>`;
+      const cells=MONTH_COLS.concat(['q3']).map(c=>{
+        if(c===col&&d.arr)return`<td class="num"><span class="arr-pill">${fmtK(d.arr)}</span></td>`;
+        return`<td class="num"></td>`;
+      }).join('');
+
+      rows+=`<tr class="row-${d.sentiment}${isActive?' active-row':''}" style="${isChecked?'':'opacity:0.6;'}">
+        <td style="width:36px;text-align:center;"><input type="checkbox" class="scenario-cb" ${isChecked?'checked':''} onclick="event.stopPropagation();toggleScenario(${d.id})"></td>
+        <td onclick="openDeal(${d.id})" style="cursor:pointer;"><div style="display:flex;align-items:center;gap:6px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}"></div><span class="tier-num">${d.tier}</span></div></td>
+        <td class="deal-name-${d.sentiment}" onclick="openDeal(${d.id})" style="cursor:pointer;">${d.name}</td>
+        <td onclick="openDeal(${d.id})" style="cursor:pointer;"><span class="stage-badge stage-${d.sentiment}">${d.stage||''}</span></td>
+        ${cells}
+        <td class="num" style="font-weight:500;font-family:'DM Mono',monospace;">${fmtK(d.arr)}</td>
+      </tr>`;
+    });
+
+    const subCells=MONTH_COLS.concat(['q3']).map(c=>`<td class="num">${st[c]?fmtK(st[c]):''}</td>`).join('');
+    rows+=`<tr class="subtotal-row">
+      <td></td>
+      <td colspan="3">Tier ${tier} — ${group.length} deal${group.length!==1?'s':''}</td>
+      ${subCells}
+      <td class="num">${fmtK(st.arr)}</td>
+    </tr>`;
+  });
+
+  // Grand total
+  const g2={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
+  sorted.forEach(d=>{const c=getCol(d.closeDate);if(g2[c]!==undefined)g2[c]+=d.arr||0;g2.arr+=d.arr||0;});
+  const gtCells=MONTH_COLS.concat(['q3']).map(c=>`<td class="num">${g2[c]?fmtK(g2[c]):''}</td>`).join('');
+  rows+=`<tr class="total-row">
+    <td></td>
+    <td colspan="3" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;">Pipeline total</td>
+    ${gtCells}
+    <td class="num">${fmtK(g2.arr)}</td>
+  </tr>`;
+
+  const checkedCount=scenarioChecked.size;
+  document.getElementById('main-panel').innerHTML=`
+    <div class="panel-header">
+      <div class="panel-title">Scenario planning</div>
+      <div style="font-size:12px;color:var(--text2);">${checkedCount} deal${checkedCount!==1?'s':''} selected</div>
+    </div>
+    <div class="scenario-summary">${summaryCards}${totalCard}</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th style="width:36px"></th>
+          <th style="width:36px">Tier</th>
+          <th style="width:155px">Deal</th>
+          <th style="width:85px">Stage</th>
+          <th class="num" style="width:55px">Mar</th>
+          <th class="num" style="width:55px">Apr</th>
+          <th class="num" style="width:55px">May</th>
+          <th class="num" style="width:55px">Jun</th>
+          <th class="num" style="width:55px">Q3+</th>
+          <th class="num" style="width:55px">ARR</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function render(){
   if(currentView==='tier')renderTierView();
   else if(currentView==='status')renderStatusView();
   else if(currentView==='arr')renderArrView();
   else if(currentView==='conviction')renderConvictionView();
   else if(currentView==='grid')renderGridView();
+  else if(currentView==='scenario')renderScenarioView();
   else if(currentView==='schedule')renderScheduleView();
 }
 
