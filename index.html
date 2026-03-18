@@ -72,6 +72,7 @@
   .arr-pill{display:inline-block;background:var(--green-bg);color:var(--green-text);font-size:11px;font-weight:500;padding:2px 7px;border-radius:4px;font-family:'DM Mono',monospace;}
   .subtotal-row td{background:var(--surface2)!important;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;border-top:1px solid var(--border2);border-bottom:2px solid var(--border2);padding:7px 12px;cursor:default;}
   .subtotal-row:hover td{background:var(--surface2)!important;}
+  .subtotal-row.drop-target td{background:var(--yellow-bg)!important;outline:2px dashed var(--yellow);}
   .subtotal-row td.num{font-family:'DM Mono',monospace;font-size:11px;color:var(--text);}
   .total-row td{background:var(--surface2)!important;font-weight:500;font-size:11px;color:var(--text2);border-top:2px solid var(--border2);cursor:default;}
   .total-row:hover td{background:var(--surface2)!important;}
@@ -401,7 +402,10 @@ function tableHTML(sorted, groupKey){
         return`<td class="num"></td>`;
       }).join('');
 
-      html+=`<tr class="row-${d.sentiment}${isActive?' active-row':''}" onclick="openDeal(${d.id})">
+      const isDraggable=currentView==='tier'||currentView==='status';
+      const dragAttrs=isDraggable?`draggable="true" ondragstart="tableDragStart(event,${d.id})" ondragend="tableDragEnd(event)" style="cursor:grab;"`:'';
+
+      html+=`<tr class="row-${d.sentiment}${isActive?' active-row':''}" ${dragAttrs} onclick="openDeal(${d.id})">
         <td>${flagHtml}</td>
         <td><div style="display:flex;align-items:center;gap:6px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}"></div><span class="tier-num">${d.tier}</span></div></td>
         <td class="deal-name-${d.sentiment}">${d.name}</td>
@@ -416,8 +420,12 @@ function tableHTML(sorted, groupKey){
     const subLabel=groupKey===byTier?`Tier ${gk} — ${group.length} deal${group.length!==1?'s':''}`
       :groupKey===byStatus?({g:'On track',y:'Watch',r:'At risk'}[gk]||gk)+` — ${group.length} deal${group.length!==1?'s':''}`
       :`${group.length} deal${group.length!==1?'s':''}`;
-    html+=`<tr class="subtotal-row">
-      <td colspan="4">${subLabel}</td>
+    const isDroppable=currentView==='tier'||currentView==='status';
+    const dropAttrs=isDroppable
+      ?`ondragover="event.preventDefault();this.classList.add('drop-target')" ondragleave="this.classList.remove('drop-target')" ondrop="tableDropRow(event,'${gk}')"`
+      :'';
+    html+=`<tr class="subtotal-row" ${dropAttrs}>
+      <td colspan="4">${subLabel}${isDroppable?' <span style="font-size:9px;color:var(--text3);font-weight:400;margin-left:6px;">drop here</span>':''}</td>
       ${subCells}
       <td class="num">${fmtK(st.arr)}</td>
       <td></td>
@@ -538,6 +546,36 @@ function dragStart(e,id){
   setTimeout(()=>e.target.style.opacity='0.4',0);
 }
 function dragEnd(e){e.target.style.opacity='1';}
+
+// Table drag (By Tier / By Status)
+let tableDragId=null;
+function tableDragStart(e,id){
+  tableDragId=id;
+  e.dataTransfer.effectAllowed='move';
+  setTimeout(()=>e.target.style.opacity='0.4',0);
+}
+function tableDragEnd(e){e.target.style.opacity='1';}
+async function tableDropRow(e,groupKey){
+  e.preventDefault();
+  document.querySelectorAll('.subtotal-row').forEach(r=>r.classList.remove('drop-target'));
+  if(tableDragId===null)return;
+  const d=deals.find(x=>x.id===tableDragId);
+  if(d){
+    if(currentView==='tier'){
+      d.tier=parseInt(groupKey);
+    } else if(currentView==='status'){
+      d.sentiment=String(groupKey);
+    }
+    if(activeDeal&&activeDeal.id===d.id){
+      activeDeal=d;
+      document.getElementById('side-meta').textContent=`Tier ${d.tier} · ${fmtK(d.arr)} ARR · ${d.stage||''}`;
+      renderSide();
+    }
+    await saveOneDeal(d);
+    render();
+  }
+  tableDragId=null;
+}
 function dropCard(e,newSentiment,newTier){
   e.preventDefault();
   document.querySelectorAll('.grid-box').forEach(b=>b.classList.remove('drag-over'));
