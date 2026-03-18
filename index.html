@@ -319,9 +319,8 @@ async function saveOneDeal(d){
   }catch(e){setStatus('Save error: '+e.message,'error');}
 }
 
-async function saveDeals(){
-  // Called after bulk changes (CSV import) — upsert all
-  // Individual saves use saveOneDeal
+function saveDeals(){
+  // Individual saves use saveOneDeal — this is a no-op stub
 }
 
 function getSampleDeals(){
@@ -999,7 +998,7 @@ You have memory of this conversation. Be direct, specific, and tactical. Referen
   }
 }
 
-function clearDealHistory(){
+async function clearDealHistory(){
   if(!activeDeal)return;
   const dealKey=String(activeDeal.id);
   try{
@@ -1010,7 +1009,7 @@ function clearDealHistory(){
 }
 
 /* ── CSV IMPORT ── */
-document.getElementById('csv-input').addEventListener('change',function(e){
+document.getElementById('csv-input').addEventListener('change',async function(e){
   const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=async function(ev){
