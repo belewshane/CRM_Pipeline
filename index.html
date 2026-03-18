@@ -1086,7 +1086,8 @@ You have memory of this conversation. Be direct, specific, and tactical. Referen
       })
     });
     const data=await res.json();
-    const reply=data.content?.find(b=>b.type==='text')?.text||'No response.';
+    if(data.error)throw new Error(data.error);
+    const reply=data.content?.find(b=>b.type==='text')?.text||'No response from Claude.';
     history.push({role:'assistant',content:reply});
 
     // Save assistant message to DB
