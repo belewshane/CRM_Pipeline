@@ -1013,25 +1013,54 @@ function clearDealHistory(){
 document.getElementById('csv-input').addEventListener('change',function(e){
   const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=function(ev){
-    const lines=ev.target.result.trim().split('\n');
-    const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
+  reader.onload=async function(ev){
+    function parseCSVLine(line){
+      const result=[];let cur='';let inQ=false;
+      for(let i=0;i<line.length;i++){
+        const c=line[i];
+        if(c==='"'){inQ=!inQ;}
+        else if(c===','&&!inQ){result.push(cur.trim());cur='';}
+        else{cur+=c;}
+      }
+      result.push(cur.trim());
+      return result;
+    }
+    function cleanNum(s){return parseFloat((s||'').replace(/[$,\s]/g,''))||0;}
+    function cleanDate(s){return(s||'').trim().split(' ')[0];}
+
+    const lines=ev.target.result.trim().split(/\r?\n/);
+    const headers=parseCSVLine(lines[0]).map(h=>h.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
     let imported=0;
+    setStatus('Importing...','info');
     for(let i=1;i<lines.length;i++){
-      const vals=lines[i].split(',').map(v=>v.trim().replace(/^"|"$/g,''));
-      const row={};headers.forEach((h,j)=>row[h]=vals[j]||'');
+      if(!lines[i].trim())continue;
+      const vals=parseCSVLine(lines[i]);
+      const row={};headers.forEach((h,j)=>row[h]=(vals[j]||'').replace(/^"|"$/g,'').trim());
       const name=row['dealname']||row['name']||row['deal']||'';
       if(!name)continue;
-      const hubFields={name,closeDate:row['closedate']||row['close']||'',stage:row['dealstage']||row['stage']||'',amount:parseFloat(row['amount'])||0,arr:parseFloat(row['arr'])||parseFloat(row['amount'])||0};
+      const hubFields={
+        name,
+        closeDate:cleanDate(row['closedate']||row['close']||''),
+        stage:row['dealstage']||row['stage']||'',
+        amount:cleanNum(row['amount']),
+        arr:cleanNum(row['arr'])||cleanNum(row['amount']),
+      };
       const existing=deals.find(d=>d.name.toLowerCase()===name.toLowerCase());
-      if(existing)Object.assign(existing,hubFields);
-      else deals.push({id:Date.now()+i,...hubFields,tier:4,sentiment:'y',pattern:'',nextMove:'',nstw:'',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''});
-      imported++;
+      try{
+        if(existing){
+          Object.assign(existing,hubFields);
+          await saveOneDeal(existing);
+        } else {
+          const newDeal={...hubFields,tier:4,sentiment:'y',pattern:'',nextMove:'',nstw:'',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''};
+          const inserted=await sbInsert('deals',dealToDb(newDeal));
+          newDeal.id=inserted[0].id;
+          deals.push(newDeal);
+        }
+        imported++;
+      }catch(e){console.warn('Import error for '+name,e);}
     }
-    saveDeals();render();
-    const msg=document.getElementById('import-status');
-    msg.textContent=`${imported} deals merged`;msg.style.display='block';
-    setTimeout(()=>msg.style.display='none',3000);
+    render();
+    setStatus(`${imported} deals imported`,'ok');
   };
   reader.readAsText(file);e.target.value='';
 });
