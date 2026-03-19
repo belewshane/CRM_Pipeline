@@ -192,7 +192,7 @@
 
 
   /* Scenario planning */
-  .scenario-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:1rem;}
+  .scenario-summary{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:10px;margin-bottom:1rem;}
   .scenario-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px 14px;}
   .scenario-card.has-value{border-color:#9FE1CB;background:var(--green-bg);}
   .scenario-card-label{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px;}
@@ -202,6 +202,21 @@
   .scenario-card.total-card{border-color:var(--border2);background:var(--surface2);}
   .scenario-card.total-card .scenario-card-value{font-size:20px;}
   .scenario-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--green);flex-shrink:0;}
+
+  /* Quota bar */
+  .quota-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.5rem;display:flex;align-items:center;gap:2rem;height:44px;flex-shrink:0;}
+  .quota-stat{display:flex;align-items:baseline;gap:6px;}
+  .quota-stat-label{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);}
+  .quota-stat-value{font-size:14px;font-weight:600;font-family:'DM Mono',monospace;color:var(--text);}
+  .quota-stat-value.green{color:var(--green-text);}
+  .quota-stat-value.yellow{color:var(--yellow-text);}
+  .quota-stat-value.red{color:var(--red-text);}
+  .quota-progress-wrap{flex:1;max-width:200px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;}
+  .quota-progress-fill{height:100%;border-radius:3px;transition:width .3s;}
+  .quota-edit-btn{font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;font-family:'DM Sans',sans-serif;}
+  .quota-edit-btn:hover{color:var(--text2);}
+  .quota-edit-wrap{display:flex;align-items:center;gap:6px;}
+  .quota-input{font-family:'DM Mono',monospace;font-size:12px;padding:3px 8px;border:1px solid var(--border2);border-radius:var(--radius);width:80px;background:var(--surface);color:var(--text);}
   ::-webkit-scrollbar{width:6px;}
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
@@ -216,6 +231,10 @@
     <label class="btn" style="cursor:pointer">Import CSV<input type="file" accept=".csv" id="csv-input" style="display:none"></label>
   </div>
 </nav>
+
+<div class="quota-bar" id="quota-bar">
+  <!-- rendered by renderQuotaBar() -->
+</div>
 
 <div class="view-tabs">
   <button class="view-tab active" onclick="switchView('tier',this)">By tier</button>
@@ -346,7 +365,7 @@ function getSampleDeals(){
     {id:4,name:'The Sporting Company',stage:'Proposal',amount:64800,arr:64800,closeDate:'2026-03-31',tier:1,sentiment:'g',pattern:'',nextMove:'Schedule a process call.',nstw:'Confirm pricing and DM Process',capability:'convinced',impact:'convinced',urgency:'convinced',path:'exploring',notes:''},
     {id:5,name:'Edgewood Properties',stage:'Discovery',amount:30000,arr:30000,closeDate:'2026-07-10',tier:2,sentiment:'y',pattern:'',nextMove:'Focus on lowest-state dimension.',nstw:'Obtain Product Win',capability:'exploring',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
     {id:6,name:'Endeavoring Deal',stage:'Discovery',amount:29800,arr:29800,closeDate:'2026-03-31',tier:2,sentiment:'y',pattern:'',nextMove:'Focus on lowest-state dimension.',nstw:'Confirm pricing and DM Process',capability:'exploring',impact:'exploring',urgency:'unaware',path:'unaware',notes:''},
-    {id:7,name:'Mile Deep Impact',stage:'Discovery',amount:29700,arr:29700,closeDate:'2026-03-31',tier:3,sentiment:'r',pattern:'',nextMove:'Start with capability.',nstw:'Schedule a process call',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
+    {id:7,name:'Mile Deep Impact',stage:'Discovery',amount:29700,arr:29700,closeDate:'2026-03-31',tier:3,sentiment:'r',pattern:'',nextMove:'Start with product.',nstw:'Schedule a process call',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
     {id:8,name:'Oxford Development',stage:'Discovery',amount:30000,arr:30000,closeDate:'2026-06-30',tier:3,sentiment:'r',pattern:'',nextMove:'Focus on lowest-state dimension.',nstw:'Confirm pricing / flesh out',capability:'exploring',impact:'unaware',urgency:'unaware',path:'unaware',notes:''},
   ];
 }
@@ -541,10 +560,10 @@ function renderConvictionView(){
           <th style="width:52px">Status</th>
           <th style="width:36px">Tier</th>
           <th style="width:160px">Deal</th>
-          <th style="width:100px;text-align:center;">Capability</th>
-          <th style="width:100px;text-align:center;">Impact</th>
-          <th style="width:100px;text-align:center;">Urgency</th>
-          <th style="width:100px;text-align:center;">Path</th>
+          <th style="width:100px;text-align:center;">Product</th>
+          <th style="width:100px;text-align:center;">Solution</th>
+          <th style="width:100px;text-align:center;">Situation</th>
+          <th style="width:100px;text-align:center;">Process</th>
           <th>Next move</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -770,6 +789,74 @@ function renderScheduleView(){
 
 
 // ── SCENARIO PLANNING ──
+
+// ── QUOTA ──
+let quotaData = JSON.parse(localStorage.getItem('crm_quota') || 'null') || {quota:250000, closed:98000};
+let quotaEditing = false;
+
+function saveQuotaData(){localStorage.setItem('crm_quota',JSON.stringify(quotaData));}
+
+function renderQuotaBar(){
+  const {quota, closed} = quotaData;
+  const pct = Math.min(Math.round((closed/quota)*100), 100);
+  const remaining = Math.max(quota - closed, 0);
+  const color = pct >= 100 ? 'green' : pct >= 70 ? 'yellow' : 'red';
+  const fillColor = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--yellow)' : 'var(--red)';
+
+  if(quotaEditing){
+    document.getElementById('quota-bar').innerHTML=`
+      <div class="quota-stat"><span class="quota-stat-label">Quota</span>
+        <div class="quota-edit-wrap">
+          <span style="font-size:12px;color:var(--text2);">$</span>
+          <input class="quota-input" id="eq-quota" value="${quota/1000}" placeholder="250">
+          <span style="font-size:11px;color:var(--text3);">k</span>
+        </div>
+      </div>
+      <div class="quota-stat"><span class="quota-stat-label">Closed ARR</span>
+        <div class="quota-edit-wrap">
+          <span style="font-size:12px;color:var(--text2);">$</span>
+          <input class="quota-input" id="eq-closed" value="${closed/1000}" placeholder="98">
+          <span style="font-size:11px;color:var(--text3);">k</span>
+        </div>
+      </div>
+      <button onclick="saveQuotaEdit()" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:4px 12px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--text);color:white;cursor:pointer;">Save</button>
+      <button onclick="quotaEditing=false;renderQuotaBar();" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:4px 12px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;">Cancel</button>`;
+    return;
+  }
+
+  document.getElementById('quota-bar').innerHTML=`
+    <div class="quota-stat">
+      <span class="quota-stat-label">Q Quota</span>
+      <span class="quota-stat-value">$${(quota/1000).toFixed(0)}k</span>
+    </div>
+    <div class="quota-stat">
+      <span class="quota-stat-label">Closed</span>
+      <span class="quota-stat-value green">$${(closed/1000).toFixed(0)}k</span>
+    </div>
+    <div class="quota-stat">
+      <span class="quota-stat-label">Remaining</span>
+      <span class="quota-stat-value ${color}">$${(remaining/1000).toFixed(0)}k</span>
+    </div>
+    <div class="quota-stat">
+      <span class="quota-stat-label">Attainment</span>
+      <span class="quota-stat-value ${color}">${pct}%</span>
+    </div>
+    <div class="quota-progress-wrap">
+      <div class="quota-progress-fill" style="width:${pct}%;background:${fillColor};"></div>
+    </div>
+    <button class="quota-edit-btn" onclick="quotaEditing=true;renderQuotaBar();">Edit</button>`;
+}
+
+function saveQuotaEdit(){
+  const q = parseFloat(document.getElementById('eq-quota')?.value)||250;
+  const c = parseFloat(document.getElementById('eq-closed')?.value)||0;
+  quotaData = {quota: q*1000, closed: c*1000};
+  saveQuotaData();
+  quotaEditing=false;
+  renderQuotaBar();
+  if(currentView==='scenario')renderScenarioView();
+}
+
 // ── SCENARIO STATE ──
 const SCENARIO_NAMES=['Best case','Upside','Stretch'];
 let scenarioChecked=new Set();
@@ -836,9 +923,21 @@ function renderScenarioView(){
       <div class="scenario-card-value">${sums[k]?fmtK(sums[k]):'—'}</div>
     </div>`).join('');
 
+  const gap=Math.max(quotaData.quota - quotaData.closed - sums.total, 0);
+  const scenPct=Math.min(Math.round(((quotaData.closed+sums.total)/quotaData.quota)*100),100);
+  const gapColor=scenPct>=100?'var(--green-text)':scenPct>=70?'var(--yellow-text)':'var(--red-text)';
+
   const totalCard=`<div class="scenario-card total-card">
     <div class="scenario-card-label">Selected total</div>
     <div class="scenario-card-value">${sums.total?fmtK(sums.total):'—'}</div>
+  </div>
+  <div class="scenario-card" style="border-color:${gapColor};background:var(--surface2);">
+    <div class="scenario-card-label" style="color:${gapColor};">Attainment w/ scenario</div>
+    <div class="scenario-card-value" style="color:${gapColor};">${sums.total?scenPct+'%':'—'}</div>
+  </div>
+  <div class="scenario-card" style="border-color:${gapColor};">
+    <div class="scenario-card-label" style="color:${gapColor};">Gap to quota</div>
+    <div class="scenario-card-value" style="color:${gapColor};">${sums.total?(gap>0?fmtK(gap):'✓ Hit'):'—'}</div>
   </div>`;
 
   const tiers=[...new Set(sorted.map(d=>d.tier))].sort();
@@ -965,29 +1064,29 @@ function switchView(view,el){
 /* ── PATTERNS ── */
 const PATTERNS=[
   {test:s=>s.every(x=>x==='convinced'),name:'Close-ready',read:'All four dimensions confirmed. Deal is yours to lose.',move:'Drive MAP and compress paper process. Protect champion from internal drift.'},
-  {test:s=>s[0]==='convinced'&&s[1]==='convinced'&&s[2]==='convinced'&&s[3]!=='convinced',name:'Conviction without a path',read:'Strong belief across capability, impact, and urgency — but no clear path to close.',move:'Schedule a process call with procurement or legal. Don\'t let the champion shield you.'},
-  {test:s=>s[0]==='convinced'&&s[1]==='convinced'&&s[2]==='unaware',name:'Believers without a deadline',read:'Strong product conviction but no urgency created.',move:'Find or create a compelling event. Ask EB: what happens if this isn\'t solved by Q3?'},
-  {test:s=>s[0]==='convinced'&&s[1]==='convinced'&&s[2]!=='convinced',name:'Strong on substance, weak on close',read:'Capability and impact confirmed, but urgency is missing.',move:'Qualify urgency with EB directly. Champion conviction without EB urgency doesn\'t close.'},
-  {test:s=>s[0]==='convinced'&&s[1]==='unaware',name:'Feature believer, not a buyer',read:'Capability confirmed but impact not yet personal.',move:'Stop demoing. Ask: what does your team do today when this breaks?'},
-  {test:s=>s[2]==='convinced'&&s[0]!=='convinced',name:'Urgency without capability belief',read:'Real deadline present — but capability unconfirmed.',move:'Slow down. Validate capability before letting timing drive the process.'},
-  {test:s=>s.every(x=>x==='exploring'),name:'Broad exploration, no anchor',read:'Active across all four — nothing resolved. Looks like momentum, might be drift.',move:'Pick one dimension and drive it to Convinced. Capability closes fastest.'},
-  {test:s=>s[0]==='unaware'&&(s[1]==='exploring'||s[2]==='exploring'||s[3]==='exploring'),name:'Exploring without a foundation',read:'Engaged on multiple dimensions but capability unconfirmed.',move:'Anchor capability confirmation before advancing other conversations.'},
-  {test:s=>s[0]==='convinced'&&s[1]!=='convinced',name:'Early stage — capability confirmed',read:'Good foundation. Now the deal needs to become personal.',move:'Move to impact. Get a specific before/after story they personally own.'},
-  {test:s=>s.every(x=>x==='unaware'),name:'Pre-discovery',read:'No conviction established on any dimension.',move:'Start with capability. Confirm fit before exploring impact.'},
+  {test:s=>s[0]==='convinced'&&s[1]==='convinced'&&s[2]==='convinced'&&s[3]!=='convinced',name:'Conviction without a path',read:'Strong belief across product, solution, and situation — but no clear process to close.',move:'Schedule a process call with procurement or legal. Don\'t let the champion shield you.'},
+  {test:s=>s[0]==='convinced'&&s[1]==='convinced'&&s[2]==='unaware',name:'Believers without a deadline',read:'Strong solution conviction but no situation created.',move:'Find or create a compelling event. Ask EB: what happens if this isn\'t solved by Q3?'},
+  {test:s=>s[0]==='convinced'&&s[1]==='convinced'&&s[2]!=='convinced',name:'Strong on substance, weak on close',read:'Product and solution confirmed, but situation is missing.',move:'Qualify situation with EB directly. Champion conviction without EB situation doesn\'t close.'},
+  {test:s=>s[0]==='convinced'&&s[1]==='unaware',name:'Feature believer, not a buyer',read:'Product confirmed but solution not yet personal.',move:'Stop demoing. Ask: what does your team do today when this breaks?'},
+  {test:s=>s[2]==='convinced'&&s[0]!=='convinced',name:'Situation without product belief',read:'Real deadline present — but product unconfirmed.',move:'Slow down. Validate product before letting timing drive the process.'},
+  {test:s=>s.every(x=>x==='exploring'),name:'Broad exploration, no anchor',read:'Active across all four — nothing resolved. Looks like momentum, might be drift.',move:'Pick one dimension and drive it to Convinced. Product closes fastest.'},
+  {test:s=>s[0]==='unaware'&&(s[1]==='exploring'||s[2]==='exploring'||s[3]==='exploring'),name:'Exploring without a foundation',read:'Engaged on multiple dimensions but product unconfirmed.',move:'Anchor product confirmation before advancing other conversations.'},
+  {test:s=>s[0]==='convinced'&&s[1]!=='convinced',name:'Early stage — product confirmed',read:'Good foundation. Now the deal needs to become personal.',move:'Move to solution. Get a specific before/after story they personally own.'},
+  {test:s=>s.every(x=>x==='unaware'),name:'Pre-discovery',read:'No conviction established on any dimension.',move:'Start with product. Confirm fit before exploring solution.'},
 ];
 
 function diagnose(states){
   for(const p of PATTERNS)if(p.test(states))return p;
-  const dims=['Capability','Impact','Urgency','Path'];
+  const dims=['Product','Solution','Situation','Process'];
   const stuck=dims.filter((_,i)=>states[i]==='unaware');
   return{name:'Mixed conviction',read:'Some dimensions moving.'+(stuck.length?' '+stuck.join(' and ')+' not yet engaged.':''),move:'Focus on lowest-state dimension. Drive it to Exploring before spreading attention.'};
 }
 
 const DIMS=[
-  {label:'Capability',q:'"Can it do what I need?"'},
-  {label:'Impact',q:'"Will it actually change things?"'},
-  {label:'Urgency',q:'"Is now the right time to act?"'},
-  {label:'Path',q:'"Can we actually get this done?"'},
+  {label:'Product',q:'"Can it do what I need?"'},
+  {label:'Solution',q:'"Will it actually change things?"'},
+  {label:'Situation',q:'"Is now the right time to act?"'},
+  {label:'Process',q:'"Can we actually get this done?"'},
 ];
 
 /* ── DEAL PANEL ── */
@@ -1220,10 +1319,10 @@ Stage: ${d.stage}
 Close date: ${d.closeDate||'unknown'}
 Rep notes: ${d.notes||'None'}
 Conviction map:
-- Capability (Can it do what I need?): ${states[0]}
-- Impact (Will it actually change things?): ${states[1]}
-- Urgency (Is now the right time?): ${states[2]}
-- Path (Can we get this done?): ${states[3]}
+- Product (Can it do what I need?): ${states[0]}
+- Solution (Will it actually change things?): ${states[1]}
+- Situation (Is now the right time?): ${states[2]}
+- Process (Can we get this done?): ${states[3]}
 Current pattern: ${p.name}
 Suggested next move: ${p.move}
 
@@ -1364,6 +1463,7 @@ async function init(){
     deals=[];
   }
   render();
+  renderQuotaBar();
 }
 
 init();
