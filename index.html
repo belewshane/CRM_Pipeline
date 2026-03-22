@@ -226,6 +226,14 @@
 
 <nav class="nav">
   <div class="nav-brand">Pipeline <span>/ Northspyre</span></div>
+  <div style="display:flex;align-items:center;gap:10px;flex:1;justify-content:center;">
+    <div id="readonly-badge" style="display:none;align-items:center;gap:5px;background:var(--yellow-bg);border:1px solid #FAC775;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:500;color:var(--yellow-text);">
+      View only
+    </div>
+    <select id="snapshot-selector" onchange="switchSnapshot(parseInt(this.value))" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 10px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);cursor:pointer;max-width:220px;">
+      <option>No snapshots yet — import a CSV</option>
+    </select>
+  </div>
   <div class="nav-actions">
     <span id="import-status" class="import-msg" style="display:none"></span>
     <label class="btn" style="cursor:pointer">Import CSV<input type="file" accept=".csv" id="csv-input" style="display:none"></label>
@@ -300,15 +308,19 @@ function dbToDeal(r){
     urgency:r.urgency||'unaware',path:r.path||'unaware',notes:r.notes||''};
 }
 // Map app deal -> DB fields (no id)
-function dealToDb(d){
+function dealToDb(d,snapshotId){
   return{name:d.name,stage:d.stage,amount:d.amount,arr:d.arr,close_date:d.closeDate,
     tier:d.tier,sentiment:d.sentiment,pattern:d.pattern,next_move:d.nextMove,
     nstw:d.nstw,capability:d.capability,impact:d.impact,urgency:d.urgency,
-    path:d.path,notes:d.notes,updated_at:new Date().toISOString()};
+    path:d.path,notes:d.notes,updated_at:new Date().toISOString(),
+    snapshot_id:snapshotId||activeSnapshotId||null};
 }
 
 let deals=[];
-let schedule={};  // weekKey -> {dealId__day -> activity}
+let schedule={};
+let snapshots=[];        // [{id, week_label, week_date}]
+let activeSnapshotId=null;
+let isReadOnly=false;
 let activeDeal=null;
 let sideTab='conviction';
 let currentView='tier';
@@ -323,15 +335,59 @@ function setStatus(msg,type='info'){
   if(type==='ok'||type==='info')setTimeout(()=>{el.style.display='none';},3000);
 }
 
+async function loadSnapshots(){
+  try{
+    const rows=await sbGet('snapshots','select=*&order=week_date.desc');
+    snapshots=rows;
+    if(snapshots.length>0 && !activeSnapshotId){
+      activeSnapshotId=snapshots[0].id;
+      isReadOnly=false;
+    }
+  }catch(e){console.warn('Snapshots load error',e);}
+}
+
 async function loadDeals(){
   try{
-    const rows=await sbGet('deals','select=*&order=tier.asc,arr.desc');
+    const param=activeSnapshotId?`snapshot_id=eq.${activeSnapshotId}`:'snapshot_id=is.null';
+    const rows=await sbGet('deals',`select=*&${param}&order=tier.asc,arr.desc`);
     deals=rows.map(dbToDeal);
     dbLoaded=true;
   }catch(e){
     setStatus('DB error: '+e.message,'error');
     deals=[];
   }
+}
+
+async function switchSnapshot(id){
+  const snap=snapshots.find(s=>s.id===id);
+  if(!snap)return;
+  activeSnapshotId=id;
+  // Most recent snapshot is editable, all others read-only
+  isReadOnly=snapshots[0].id!==id;
+  activeDeal=null;
+  document.getElementById('sidepanel').style.display='none';
+  await loadDeals();
+  render();
+  renderQuotaBar();
+  renderSnapshotSelector();
+}
+
+function renderSnapshotSelector(){
+  const el=document.getElementById('snapshot-selector');
+  if(!el||snapshots.length===0)return;
+  el.innerHTML=snapshots.map(s=>`
+    <option value="${s.id}" ${s.id===activeSnapshotId?'selected':''}>${s.week_label}${snapshots[0].id===s.id?' (current)':''}</option>
+  `).join('');
+  const badge=document.getElementById('readonly-badge');
+  if(badge)badge.style.display=isReadOnly?'flex':'none';
+}
+
+function getWeekLabel(date){
+  const d=date||new Date();
+  const day=d.getDay();
+  const diff=d.getDate()-day+(day===0?-6:1);
+  const mon=new Date(d);mon.setDate(diff);
+  return`Week of ${MONTHS[mon.getMonth()]} ${mon.getDate()}`;
 }
 
 async function loadSchedule(){
@@ -346,6 +402,7 @@ async function loadSchedule(){
 }
 
 async function saveOneDeal(d){
+  if(isReadOnly){setStatus('This snapshot is read-only','error');return;}
   try{
     if(d.id&&d.id>0&&dbLoaded){
       await sbUpdate('deals',d.id,dealToDb(d));
@@ -640,7 +697,7 @@ function tableDragEnd(e){e.target.style.opacity='1';}
 async function tableDropRow(e,groupKey){
   e.preventDefault();
   document.querySelectorAll('.subtotal-row').forEach(r=>r.classList.remove('drop-target'));
-  if(tableDragId===null)return;
+  if(tableDragId===null||isReadOnly)return;
   const d=deals.find(x=>x.id===tableDragId);
   if(d){
     if(currentView==='tier'){
@@ -661,7 +718,7 @@ async function tableDropRow(e,groupKey){
 function dropCard(e,newSentiment,newTier){
   e.preventDefault();
   document.querySelectorAll('.grid-box').forEach(b=>b.classList.remove('drag-over'));
-  if(dragDealId===null)return;
+  if(dragDealId===null||isReadOnly)return;
   const d=deals.find(x=>x.id===dragDealId);
   if(d){
     d.sentiment=newSentiment;
@@ -877,8 +934,9 @@ async function loadScenarios(){
 
 async function saveScenario(){
   if(!activeScenario)return;
-  const ids=Array.from(scenarioChecked);
-  scenarios[activeScenario]=ids;
+  // Store deal names so they resolve across snapshots
+  const names=deals.filter(d=>scenarioChecked.has(d.id)).map(d=>d.name);
+  scenarios[activeScenario]=names;
   try{
     // Try Supabase upsert
     await sbDelete('scenarios',`name=eq.${encodeURIComponent(activeScenario)}`);
@@ -893,8 +951,11 @@ async function saveScenario(){
 
 function loadScenarioIntoView(name){
   activeScenario=name;
-  const ids=scenarios[name]||[];
-  scenarioChecked=new Set(ids);
+  // Scenarios store deal names; resolve to current snapshot IDs
+  const names=scenarios[name]||[];
+  scenarioChecked=new Set(
+    deals.filter(d=>names.includes(d.name)).map(d=>d.id)
+  );
   renderScenarioView();
 }
 
@@ -1125,7 +1186,7 @@ function renderSide(){
 }
 
 async function setTier(val){
-  if(!activeDeal)return;
+  if(!activeDeal||isReadOnly)return;
   const d=deals.find(x=>x.id===activeDeal.id);
   if(d){d.tier=val;activeDeal=d;}
   document.getElementById('side-meta').textContent=`Tier ${activeDeal.tier} · ${fmtK(activeDeal.arr)} ARR · ${activeDeal.stage||''}`;
@@ -1135,7 +1196,7 @@ async function setTier(val){
 }
 
 async function setSentiment(val){
-  if(!activeDeal)return;
+  if(!activeDeal||isReadOnly)return;
   const d=deals.find(x=>x.id===activeDeal.id);
   if(d){d.sentiment=val;activeDeal=d;}
   await saveOneDeal(activeDeal);
@@ -1230,7 +1291,7 @@ function renderDetails(){
 }
 
 async function deleteDeal(){
-  if(!activeDeal)return;
+  if(!activeDeal||isReadOnly)return;
   if(!confirm(`Delete "${activeDeal.name}"? This cannot be undone.`))return;
   const id=activeDeal.id;
   try{
@@ -1245,7 +1306,7 @@ async function deleteDeal(){
 }
 
 async function setState(dimIdx,state){
-  if(!activeDeal)return;
+  if(!activeDeal||isReadOnly)return;
   const keys=['capability','impact','urgency','path'];
   const d=deals.find(x=>x.id===activeDeal.id);
   if(d){d[keys[dimIdx]]=state;activeDeal=d;}
@@ -1418,8 +1479,27 @@ document.getElementById('csv-input').addEventListener('change',async function(e)
 
     const lines=ev.target.result.trim().split(/\r?\n/);
     const headers=parseCSVLine(lines[0]).map(h=>h.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
+    setStatus('Creating snapshot...','info');
+
+    // Create new snapshot
+    const weekLabel=getWeekLabel(new Date());
+    const weekDate=new Date().toISOString().split('T')[0];
+    let snapId;
+    try{
+      const snapRows=await sbInsert('snapshots',{week_label:weekLabel,week_date:weekDate});
+      snapId=snapRows[0].id;
+      snapshots.unshift({id:snapId,week_label:weekLabel,week_date:weekDate});
+      activeSnapshotId=snapId;
+      isReadOnly=false;
+    }catch(e){
+      setStatus('Snapshot error: '+e.message,'error');
+      return;
+    }
+
     let imported=0;
-    setStatus('Importing...','info');
+    setStatus('Importing deals...','info');
+    deals=[];
+
     for(let i=1;i<lines.length;i++){
       if(!lines[i].trim())continue;
       const vals=parseCSVLine(lines[i]);
@@ -1433,22 +1513,18 @@ document.getElementById('csv-input').addEventListener('change',async function(e)
         amount:cleanNum(row['amount']),
         arr:cleanNum(row['arr'])||cleanNum(row['amount']),
       };
-      const existing=deals.find(d=>d.name.toLowerCase()===name.toLowerCase());
       try{
-        if(existing){
-          Object.assign(existing,hubFields);
-          await saveOneDeal(existing);
-        } else {
-          const newDeal={...hubFields,tier:4,sentiment:'y',pattern:'',nextMove:'',nstw:'',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''};
-          const inserted=await sbInsert('deals',dealToDb(newDeal));
-          newDeal.id=inserted[0].id;
-          deals.push(newDeal);
-        }
+        const newDeal={...hubFields,tier:4,sentiment:'y',pattern:'',nextMove:'',nstw:'',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''};
+        const inserted=await sbInsert('deals',dealToDb(newDeal,snapId));
+        newDeal.id=inserted[0].id;
+        deals.push(newDeal);
         imported++;
       }catch(e){console.warn('Import error for '+name,e);}
     }
+
     render();
-    setStatus(`${imported} deals imported`,'ok');
+    renderSnapshotSelector();
+    setStatus(`Snapshot "${weekLabel}" created — ${imported} deals imported`,'ok');
   };
   reader.readAsText(file);e.target.value='';
 });
@@ -1457,6 +1533,7 @@ document.getElementById('csv-input').addEventListener('change',async function(e)
 async function init(){
   document.getElementById('main-panel').innerHTML='<div style="padding:2rem;color:var(--text3);font-size:13px;">Loading pipeline...</div>';
   try{
+    await loadSnapshots();
     await Promise.all([loadDeals(), loadSchedule(), loadScenarios()]);
   }catch(e){
     console.warn('Init error',e);
@@ -1464,6 +1541,7 @@ async function init(){
   }
   render();
   renderQuotaBar();
+  renderSnapshotSelector();
 }
 
 init();
