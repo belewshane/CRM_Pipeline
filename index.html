@@ -86,7 +86,7 @@
   .grid-row-label.rl-g{color:var(--green-text);}
   .grid-row-label.rl-y{color:var(--yellow-text);}
   .grid-row-label.rl-r{color:var(--red-text);}
-  .grid-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);min-height:100px;padding:10px;display:flex;flex-direction:column;gap:6px;}
+  .grid-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);min-height:60px;padding:7px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;align-content:start;}
   .grid-box.box-g1{border-color:#9FE1CB;background:#F5FCF9;}
   .grid-box.box-g2{border-color:#C0DD97;background:#F7FAF2;}
   .grid-box.box-g3{border-color:var(--border);background:var(--surface);}
@@ -99,15 +99,15 @@
   .grid-box.box-r2{border-color:var(--border);background:var(--surface2);}
   .grid-box.box-r3{border-color:#F7C1C1;background:#FDF5F5;}
   .grid-box.box-r4{border-color:#F0A0A0;background:#FDF0F0;}
-  .deal-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:7px 9px;cursor:grab;transition:all .12s;}
+  .deal-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;cursor:grab;transition:all .12s;}
   .deal-card:hover{border-color:var(--border2);background:var(--surface2);}
   .deal-card.active-card{border-color:var(--border2);background:var(--surface2);}
   .deal-card:active{cursor:grabbing;opacity:0.7;}
   .grid-box.drag-over{border-color:var(--border2) !important;outline:2px dashed var(--border2);}
-  .dc-name{font-size:11px;font-weight:500;color:var(--text);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .dc-name{font-size:10px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .dc-arr{font-size:10px;font-family:'DM Mono',monospace;color:var(--text2);}
   .dc-stage{font-size:10px;color:var(--text3);}
-  .grid-empty{font-size:10px;color:var(--text3);text-align:center;padding:12px 0;}
+  .grid-empty{font-size:10px;color:var(--text3);text-align:center;padding:8px 0;grid-column:1/-1;}
 
   /* Schedule */
   .sched-nav{display:flex;align-items:center;gap:8px;}
@@ -589,21 +589,29 @@ function renderConvictionView(){
     return`<span style="font-size:11px;padding:2px 9px;border-radius:20px;background:#F1EFE8;color:#5F5E5A;border:1px solid #D3D1C7;">Unaware</span>`;
   };
 
-  const rows=sorted.map(d=>{
-    const isActive=activeDeal&&activeDeal.id===d.id;
-    const flags=getFlagDots(d.sentiment);
-    const flagHtml=`<div class="flags">${flags.map(f=>`<div class="flag ${f}"></div>`).join('')}</div>`;
-    return`<tr class="row-${d.sentiment}${isActive?' active-row':''}" onclick="openDeal(${d.id})" style="cursor:pointer;">
-      <td>${flagHtml}</td>
-      <td><div style="display:flex;align-items:center;gap:6px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}"></div><span class="tier-num">${d.tier}</span></div></td>
-      <td class="deal-name-${d.sentiment}">${d.name}</td>
-      <td style="text-align:center;">${stateChip(d.capability||'unaware')}</td>
-      <td style="text-align:center;">${stateChip(d.impact||'unaware')}</td>
-      <td style="text-align:center;">${stateChip(d.urgency||'unaware')}</td>
-      <td style="text-align:center;">${stateChip(d.path||'unaware')}</td>
-      <td style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(d.nextMove||'').replace(/"/g,'&quot;')}">${d.nextMove||''}</td>
+  const tiers=[...new Set(sorted.map(d=>d.tier))].sort();
+  let rows='';
+  tiers.forEach(tier=>{
+    const group=sorted.filter(d=>d.tier===tier);
+    group.forEach(d=>{
+      const isActive=activeDeal&&activeDeal.id===d.id;
+      const flags=getFlagDots(d.sentiment);
+      const flagHtml=`<div class="flags">${flags.map(f=>`<div class="flag ${f}"></div>`).join('')}</div>`;
+      rows+=`<tr class="row-${d.sentiment}${isActive?' active-row':''}" onclick="openDeal(${d.id})" style="cursor:pointer;">
+        <td>${flagHtml}</td>
+        <td><div style="display:flex;align-items:center;gap:6px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}"></div><span class="tier-num">${d.tier}</span></div></td>
+        <td class="deal-name-${d.sentiment}">${d.name}</td>
+        <td style="text-align:center;">${stateChip(d.capability||'unaware')}</td>
+        <td style="text-align:center;">${stateChip(d.impact||'unaware')}</td>
+        <td style="text-align:center;">${stateChip(d.urgency||'unaware')}</td>
+        <td style="text-align:center;">${stateChip(d.path||'unaware')}</td>
+        <td style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(d.nextMove||'').replace(/"/g,'&quot;')}">${d.nextMove||''}</td>
+      </tr>`;
+    });
+    rows+=`<tr class="subtotal-row" style="cursor:default;">
+      <td colspan="8" style="border-top:1px solid var(--border2);border-bottom:2px solid var(--border2);padding:4px 12px;">Tier ${tier} — ${group.length} deal${group.length!==1?'s':''}</td>
     </tr>`;
-  }).join('');
+  });
 
   const totalArr=deals.reduce((s,d)=>s+(d.arr||0),0);
   document.getElementById('main-panel').innerHTML=`
@@ -653,12 +661,8 @@ function renderGridView(){
             ondragstart="dragStart(event,${d.id})"
             ondragend="dragEnd(event)"
             onclick="openDeal(${d.id})"
-            title="Drag to reclassify">
+            title="${d.name} · ${fmtK(d.arr)}">
             <div class="dc-name">${d.name}</div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;">
-              <span class="dc-arr">${fmtK(d.arr)}</span>
-              <span class="dc-stage">${d.stage||''}</span>
-            </div>
           </div>`).join('')
         : `<div class="grid-empty">—</div>`;
       html+=`<div class="grid-box ${boxClass}" id="gbox-${s}-${t}"
@@ -804,19 +808,27 @@ function renderScheduleView(){
   const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
   const days=['Monday','Tuesday','Wednesday','Thursday','Friday'];
 
-  const rows=sorted.map(d=>{
-    const cells=days.map(day=>{
-      const key=`${d.id}__${day}`;
-      const val=schedule[wk][key]||'';
-      return`<td class="day-cell"><div class="cell-wrap" id="cell-${d.id}-${day}">${cellInner(d.id,day,val)}</div></td>`;
-    }).join('');
+  const schedTiers=[...new Set(sorted.map(d=>d.tier))].sort();
+  let rows='';
+  schedTiers.forEach(tier=>{
+    const group=sorted.filter(d=>d.tier===tier);
+    group.forEach(d=>{
+      const cells=days.map(day=>{
+        const key=`${d.id}__${day}`;
+        const val=schedule[wk][key]||'';
+        return`<td class="day-cell" style="background:var(--surface);"><div class="cell-wrap" id="cell-${d.id}-${day}">${cellInner(d.id,day,val)}</div></td>`;
+      }).join('');
 
-    return`<tr class="srow-${d.sentiment}">
-      <td style="width:28px;padding:5px 8px;"><div style="display:flex;align-items:center;gap:5px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}" style="height:20px;"></div><span class="tier-num">${d.tier}</span></div></td>
-      <td class="sched-deal-name" style="overflow:hidden;text-overflow:ellipsis;cursor:pointer;" onclick="openDeal(${d.id})">${d.name}</td>
-      ${cells}
+      rows+=`<tr>
+        <td style="width:28px;padding:5px 8px;background:var(--surface);"><div style="display:flex;align-items:center;gap:5px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}" style="height:20px;"></div><span class="tier-num">${d.tier}</span></div></td>
+        <td class="sched-deal-name deal-name-${d.sentiment}" style="overflow:hidden;text-overflow:ellipsis;cursor:pointer;background:var(--surface);" onclick="openDeal(${d.id})">${d.name}</td>
+        ${cells}
+      </tr>`;
+    });
+    rows+=`<tr class="subtotal-row" style="cursor:default;">
+      <td colspan="7" style="border-top:1px solid var(--border2);border-bottom:2px solid var(--border2);padding:4px 12px;">Tier ${tier} — ${group.length} deal${group.length!==1?'s':''}</td>
     </tr>`;
-  }).join('');
+  });
 
   document.getElementById('main-panel').innerHTML=`
     <div class="panel-header">
