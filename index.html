@@ -802,6 +802,26 @@ async function clearActivity(dealId,day){
   if(cell)cell.innerHTML=cellInner(dealId,day,'');
 }
 
+
+function toggleNoTouch(dealId){
+  const wk=getSchedWeekKey(schedWeekOffset);
+  if(!schedule[wk])schedule[wk]={};
+  const key=`notouch__${dealId}`;
+  const existing=schedule[wk][key];
+  if(existing){
+    // uncheck — delete from DB
+    saveScheduleActivity(dealId,'notouch',wk,'',existing.rowId);
+    delete schedule[wk][key];
+  } else {
+    // check — save to DB
+    saveScheduleActivity(dealId,'notouch',wk,'notouch',null).then(rowId=>{
+      schedule[wk][key]={activity:'notouch',rowId};
+    });
+    schedule[wk][key]={activity:'notouch',rowId:null};
+  }
+  // Re-render just the row
+  renderScheduleView();
+}
 function renderScheduleView(){
   const wk=getSchedWeekKey(schedWeekOffset);
   if(!schedule[wk])schedule[wk]={};
@@ -819,14 +839,21 @@ function renderScheduleView(){
         return`<td class="day-cell" style="background:var(--surface);"><div class="cell-wrap" id="cell-${d.id}-${day}">${cellInner(d.id,day,val)}</div></td>`;
       }).join('');
 
+      const noTouchKey=`notouch__${d.id}`;
+      const isNoTouch=!!(schedule[wk][noTouchKey]);
+      const rowBg=isNoTouch?'var(--green-row)':'var(--surface)';
+      const nameBg=isNoTouch?'var(--green-row)':'var(--surface)';
+      const nameColor=isNoTouch?'var(--green-text)':'';
+
       rows+=`<tr>
-        <td style="width:28px;padding:5px 8px;background:var(--surface);"><div style="display:flex;align-items:center;gap:5px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}" style="height:20px;"></div><span class="tier-num">${d.tier}</span></div></td>
-        <td class="sched-deal-name deal-name-${d.sentiment}" style="overflow:hidden;text-overflow:ellipsis;cursor:pointer;background:var(--surface);" onclick="openDeal(${d.id})">${d.name}</td>
-        ${cells}
+        <td style="width:28px;padding:5px 8px;background:${rowBg};"><div style="display:flex;align-items:center;gap:5px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}" style="height:20px;"></div><span class="tier-num">${d.tier}</span></div></td>
+        <td class="sched-deal-name" style="overflow:hidden;text-overflow:ellipsis;cursor:pointer;background:${nameBg};color:${nameColor||'inherit'};" onclick="openDeal(${d.id})">${d.name}</td>
+        <td style="text-align:center;padding:4px 6px;background:${rowBg};"><input type="checkbox" class="scenario-cb" ${isNoTouch?'checked':''} onclick="event.stopPropagation();toggleNoTouch(${d.id})" title="No touch needed this week"></td>
+        ${cells.replace(/background:var\(--surface\)/g, `background:${rowBg}`)}
       </tr>`;
     });
     rows+=`<tr class="subtotal-row" style="cursor:default;">
-      <td colspan="7" style="border-top:1px solid var(--border2);border-bottom:2px solid var(--border2);padding:4px 12px;">Tier ${tier} — ${group.length} deal${group.length!==1?'s':''}</td>
+      <td colspan="8" style="border-top:1px solid var(--border2);border-bottom:2px solid var(--border2);padding:4px 12px;">Tier ${tier} — ${group.length} deal${group.length!==1?'s':''}</td>
     </tr>`;
   });
 
@@ -845,6 +872,7 @@ function renderScheduleView(){
         <thead><tr>
           <th style="width:32px"></th>
           <th style="width:160px">Deal</th>
+          <th style="width:36px;text-align:center;" title="No touch needed"></th>
           <th class="day-col-h" style="width:110px">Monday</th>
           <th class="day-col-h" style="width:110px">Tuesday</th>
           <th class="day-col-h" style="width:110px">Wednesday</th>
