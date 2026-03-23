@@ -45,6 +45,7 @@
   thead th.num{text-align:right;}
   tbody tr{cursor:pointer;border-bottom:1px solid var(--border);}
   tbody tr:last-child{border-bottom:none;}
+  tr.row-unset td{background:var(--surface2);}
   tr.row-g td{background:var(--green-row);}
   tr.row-y td{background:var(--yellow-row);}
   tr.row-r td{background:var(--red-row);}
@@ -60,6 +61,7 @@
   .deal-name-y{color:var(--yellow-text)!important;font-weight:500;}
   .deal-name-r{color:var(--red-text)!important;font-weight:500;}
   .stage-badge{font-size:10px;padding:2px 7px;border-radius:20px;border:1px solid;white-space:nowrap;}
+  .stage-unset{background:var(--surface2);color:var(--text3);border-color:var(--border2);}
   .stage-g{background:var(--green-bg);color:var(--green-text);border-color:#9FE1CB;}
   .stage-y{background:var(--yellow-bg);color:var(--yellow-text);border-color:#FAC775;}
   .stage-r{background:var(--red-bg);color:var(--red-text);border-color:#F7C1C1;}
@@ -77,7 +79,10 @@
   .total-row td{background:var(--surface2)!important;font-weight:500;font-size:10px;color:var(--text2);border-top:2px solid var(--border2);cursor:default;padding:4px 12px;}
   .total-row:hover td{background:var(--surface2)!important;}
   .total-row td.num{font-family:'DM Mono',monospace;font-size:11px;color:var(--text);}
-  .next-move-cell{font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .next-move-cell{font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text;}
+  .next-move-cell:hover{color:var(--text);background:var(--surface2);border-radius:4px;}
+  .next-move-input{font-family:'DM Sans',sans-serif;font-size:11px;width:100%;padding:2px 4px;border:1px solid var(--border2);border-radius:4px;background:var(--surface);color:var(--text);outline:none;}
+  .next-move-input:focus{border-color:var(--text2);}
 
   /* 12-box grid */
   .grid-wrap{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
@@ -303,16 +308,16 @@ async function sbDelete(table, params){
 // Map DB row -> app deal object
 function dbToDeal(r){
   return{id:r.id,name:r.name,stage:r.stage||'',amount:r.amount||0,arr:r.arr||0,closeDate:r.close_date||'',
-    tier:r.tier||4,sentiment:r.sentiment||'y',pattern:r.pattern||'',nextMove:r.next_move||'',
+    tier:r.tier||null,sentiment:r.sentiment||null,pattern:r.pattern||'',nextMove:r.next_move||'',
     nstw:r.nstw||'',capability:r.capability||'unaware',impact:r.impact||'unaware',
     urgency:r.urgency||'unaware',path:r.path||'unaware',notes:r.notes||''};
 }
 // Map app deal -> DB fields (no id)
 function dealToDb(d,snapshotId){
-  return{name:d.name,stage:d.stage,amount:d.amount,arr:d.arr,close_date:d.closeDate,
-    tier:d.tier,sentiment:d.sentiment,pattern:d.pattern,next_move:d.nextMove,
-    nstw:d.nstw,capability:d.capability,impact:d.impact,urgency:d.urgency,
-    path:d.path,notes:d.notes,updated_at:new Date().toISOString(),
+  return{name:d.name,stage:d.stage,amount:d.amount||0,arr:d.arr||0,close_date:d.closeDate||null,
+    tier:d.tier||null,sentiment:d.sentiment||null,pattern:d.pattern||'',next_move:d.nextMove||'',
+    nstw:d.nstw||'',capability:d.capability||'unaware',impact:d.impact||'unaware',urgency:d.urgency||'unaware',
+    path:d.path||'unaware',notes:d.notes||'',updated_at:new Date().toISOString(),
     snapshot_id:snapshotId||activeSnapshotId||null};
 }
 
@@ -401,6 +406,43 @@ async function loadSchedule(){
   }catch(e){console.warn('Schedule load error',e);}
 }
 
+
+async function saveNextMove(dealId, val){
+  const d=deals.find(x=>x.id===dealId);
+  if(!d)return;
+  d.nextMove=val;
+  if(activeDeal&&activeDeal.id===dealId)activeDeal=d;
+  await saveOneDeal(d);
+  // Update side panel if open on this deal
+  const nm=document.getElementById('f-nextmove');
+  if(nm&&activeDeal&&activeDeal.id===dealId)nm.value=val;
+}
+
+function startEditNextMove(dealId, el){
+  if(isReadOnly)return;
+  const current=el.textContent;
+  const input=document.createElement('input');
+  input.className='next-move-input';
+  input.value=current;
+  el.replaceWith(input);
+  input.focus();
+  input.select();
+  const finish=async()=>{
+    const val=input.value.trim();
+    const newTd=document.createElement('td');
+    newTd.className='next-move-cell';
+    newTd.title=val;
+    newTd.textContent=val;
+    newTd.onclick=function(){startEditNextMove(dealId,this);};
+    input.replaceWith(newTd);
+    await saveNextMove(dealId,val);
+  };
+  input.addEventListener('blur',finish);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();input.blur();}
+    if(e.key==='Escape'){input.value=current;input.blur();}
+  });
+}
 async function saveOneDeal(d){
   if(isReadOnly){setStatus('This snapshot is read-only','error');return;}
   try{
@@ -457,6 +499,7 @@ function fmtK(v){
 function getFlagDots(s){
   if(s==='g')return['flag-g','flag-g','flag-e'];
   if(s==='r')return['flag-r','flag-r','flag-e'];
+  if(!s)return['flag-e','flag-e','flag-e'];
   return['flag-y','flag-e','flag-e'];
 }
 
@@ -495,14 +538,21 @@ function tableHTML(sorted, groupKey){
       const isDraggable=currentView==='tier'||currentView==='status';
       const dragAttrs=isDraggable?`draggable="true" ondragstart="tableDragStart(event,${d.id})" ondragend="tableDragEnd(event)" style="cursor:grab;"`:'';
 
-      html+=`<tr class="row-${d.sentiment}${isActive?' active-row':''}" ${dragAttrs} onclick="openDeal(${d.id})">
+      const rowClass=d.sentiment?`row-${d.sentiment}`:'row-unset';
+      const nameClass=d.sentiment?`deal-name-${d.sentiment}`:'';
+      const stageClass=d.sentiment?`stage-${d.sentiment}`:'stage-unset';
+      const tierCell=d.tier
+        ?`<div style="display:flex;align-items:center;gap:6px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}"></div><span class="tier-num">${d.tier}</span></div>`
+        :`<div style="display:flex;align-items:center;gap:6px"><div style="width:3px;height:16px;border-radius:2px;background:var(--border2);display:inline-block;"></div><span class="tier-num" style="color:var(--border2);">—</span></div>`;
+
+      html+=`<tr class="${rowClass}${isActive?' active-row':''}" ${dragAttrs} onclick="openDeal(${d.id})">
         <td>${flagHtml}</td>
-        <td><div style="display:flex;align-items:center;gap:6px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}"></div><span class="tier-num">${d.tier}</span></div></td>
-        <td class="deal-name-${d.sentiment}">${d.name}</td>
-        <td><span class="stage-badge stage-${d.sentiment}">${d.stage||''}</span></td>
+        <td>${tierCell}</td>
+        <td class="${nameClass}">${d.name}</td>
+        <td><span class="stage-badge ${stageClass}">${d.stage||''}</span></td>
         ${cells}
         <td class="num" style="font-weight:500;font-family:'DM Mono',monospace;">${fmtK(d.arr)}</td>
-        <td class="next-move-cell" title="${nm.replace(/"/g,'&quot;')}">${nm}</td>
+        <td class="next-move-cell" title="${nm.replace(/"/g,'&quot;')}" onclick="startEditNextMove(${d.id},this)">${nm}</td>
       </tr>`;
     });
 
@@ -555,14 +605,14 @@ function tableHTML(sorted, groupKey){
   </table></div>`;
 }
 
-function byTier(d){return d.tier;}
+function byTier(d){return d.tier||99;}
 function byStatus(d){return d.sentiment;}
 function byArr(d){return 'all';}
 
 /* ── VIEWS ── */
 function renderTierView(){
   if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
-  const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
+  const sorted=[...deals].sort((a,b)=>(a.tier||99)-(b.tier||99)||b.arr-a.arr);
   document.getElementById('main-panel').innerHTML=tableHTML(sorted,byTier);
 }
 
@@ -605,7 +655,7 @@ function renderConvictionView(){
         <td style="text-align:center;">${stateChip(d.impact||'unaware')}</td>
         <td style="text-align:center;">${stateChip(d.urgency||'unaware')}</td>
         <td style="text-align:center;">${stateChip(d.path||'unaware')}</td>
-        <td style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(d.nextMove||'').replace(/"/g,'&quot;')}">${d.nextMove||''}</td>
+        <td class="next-move-cell" title="${(d.nextMove||'').replace(/"/g,'&quot;')}" onclick="startEditNextMove(${d.id},this)">${d.nextMove||''}</td>
       </tr>`;
     });
     rows+=`<tr class="subtotal-row" style="cursor:default;">
@@ -833,23 +883,34 @@ function renderScheduleView(){
   schedTiers.forEach(tier=>{
     const group=sorted.filter(d=>d.tier===tier);
     group.forEach(d=>{
-      const cells=days.map(day=>{
-        const key=`${d.id}__${day}`;
-        const val=schedule[wk][key]||'';
-        return`<td class="day-cell" style="background:var(--surface);"><div class="cell-wrap" id="cell-${d.id}-${day}">${cellInner(d.id,day,val)}</div></td>`;
-      }).join('');
-
       const noTouchKey=`notouch__${d.id}`;
       const isNoTouch=!!(schedule[wk][noTouchKey]);
-      const rowBg=isNoTouch?'var(--green-row)':'var(--surface)';
-      const nameBg=isNoTouch?'var(--green-row)':'var(--surface)';
-      const nameColor=isNoTouch?'var(--green-text)':'';
+
+      // Find earliest day with an activity this week
+      const firstActivityIdx=days.findIndex(day=>{
+        const val=schedule[wk][`${d.id}__${day}`];
+        return val&&val.activity;
+      });
+
+      const cells=days.map((day,idx)=>{
+        const key=`${d.id}__${day}`;
+        const val=schedule[wk][key]||'';
+        // Green if: no-touch checked, OR day is at or before the first activity
+        const isGreen=isNoTouch||(firstActivityIdx>=0&&idx<=firstActivityIdx);
+        const bg=isGreen?'var(--green-row)':'var(--surface)';
+        return`<td class="day-cell" style="background:${bg};"><div class="cell-wrap" id="cell-${d.id}-${day}">${cellInner(d.id,day,val)}</div></td>`;
+      }).join('');
+
+      const rowFullGreen=isNoTouch;
+      const nameBg=rowFullGreen?'var(--green-row)':'var(--surface)';
+      const nameColor=rowFullGreen?'var(--green-text)':'inherit';
+      const tierBg=rowFullGreen?'var(--green-row)':'var(--surface)';
 
       rows+=`<tr>
-        <td style="width:28px;padding:5px 8px;background:${rowBg};"><div style="display:flex;align-items:center;gap:5px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}" style="height:20px;"></div><span class="tier-num">${d.tier}</span></div></td>
-        <td class="sched-deal-name" style="overflow:hidden;text-overflow:ellipsis;cursor:pointer;background:${nameBg};color:${nameColor||'inherit'};" onclick="openDeal(${d.id})">${d.name}</td>
-        <td style="text-align:center;padding:4px 6px;background:${rowBg};"><input type="checkbox" class="scenario-cb" ${isNoTouch?'checked':''} onclick="event.stopPropagation();toggleNoTouch(${d.id})" title="No touch needed this week"></td>
-        ${cells.replace(/background:var\(--surface\)/g, `background:${rowBg}`)}
+        <td style="width:28px;padding:5px 8px;background:${tierBg};"><div style="display:flex;align-items:center;gap:5px"><div class="tier-stripe stripe-${Math.min(d.tier,4)}" style="height:20px;"></div><span class="tier-num">${d.tier}</span></div></td>
+        <td class="sched-deal-name" style="overflow:hidden;text-overflow:ellipsis;cursor:pointer;background:${nameBg};color:${nameColor};" onclick="openDeal(${d.id})">${d.name}</td>
+        <td style="text-align:center;padding:4px 6px;background:${tierBg};"><input type="checkbox" class="scenario-cb" ${isNoTouch?'checked':''} onclick="event.stopPropagation();toggleNoTouch(${d.id})" title="No touch needed this week"></td>
+        ${cells}
       </tr>`;
     });
     rows+=`<tr class="subtotal-row" style="cursor:default;">
@@ -960,16 +1021,26 @@ let scenarioChecked=new Set();
 let activeScenario=null; // 'Best case' | 'Upside' | 'Stretch' | null
 let scenarios={}; // {name: [id, id, ...]}
 
+let lastKnownArr={}; // dealName -> last known ARR across all snapshots
+
 async function loadScenarios(){
   try{
     const rows=await sbGet('scenarios','select=*');
     scenarios={};
     rows.forEach(r=>{scenarios[r.name]=JSON.parse(r.deal_ids||'[]');});
   }catch(e){
-    // Table may not exist yet — use localStorage fallback
     const s=localStorage.getItem('crm_scenarios');
     if(s)scenarios=JSON.parse(s);
   }
+  // Build lastKnownArr from ALL deals across all snapshots
+  try{
+    const allDeals=await sbGet('deals','select=name,arr');
+    allDeals.forEach(r=>{
+      if(r.arr && (!lastKnownArr[r.name] || r.arr > lastKnownArr[r.name])){
+        lastKnownArr[r.name]=r.arr;
+      }
+    });
+  }catch(e){console.warn('lastKnownArr error',e);}
 }
 
 async function saveScenario(){
@@ -989,13 +1060,19 @@ async function saveScenario(){
   setStatus(`"${activeScenario}" saved`,'ok');
 }
 
+let scenarioMissingDeals=[]; // deals in scenario not found in current snapshot
+
 function loadScenarioIntoView(name){
   activeScenario=name;
-  // Scenarios store deal names; resolve to current snapshot IDs
   const names=scenarios[name]||[];
-  scenarioChecked=new Set(
-    deals.filter(d=>names.includes(d.name)).map(d=>d.id)
-  );
+  // Find which names exist in current snapshot
+  const foundNames=deals.filter(d=>names.includes(d.name)).map(d=>d.name);
+  scenarioChecked=new Set(deals.filter(d=>names.includes(d.name)).map(d=>d.id));
+  // Track missing: names in scenario not found in current snapshot
+  // Look up their last known ARR from all_deal_history cache
+  scenarioMissingDeals=names
+    .filter(n=>!foundNames.includes(n))
+    .map(n=>({name:n,arr:lastKnownArr[n]||null}));
   renderScenarioView();
 }
 
@@ -1113,11 +1190,19 @@ function renderScenarioView(){
       <div class="panel-title">Scenario planning</div>
       <div style="font-size:12px;color:var(--text2);">${checkedCount} deal${checkedCount!==1?'s':''} selected</div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:${scenarioMissingDeals.length?'8px':'1rem'};">
       ${pillsHtml}
       <div style="flex:1;"></div>
       ${saveBtn}
     </div>
+    ${scenarioMissingDeals.length&&activeScenario?`
+    <div style="margin-bottom:1rem;padding:10px 14px;background:var(--yellow-bg);border:1px solid #FAC775;border-radius:var(--radius-lg);">
+      <div style="font-size:11px;font-weight:600;color:var(--yellow-text);margin-bottom:6px;">${activeScenario} — ${scenarioMissingDeals.length} deal${scenarioMissingDeals.length!==1?'s':''} not found in this snapshot</div>
+      ${scenarioMissingDeals.map(d=>`<div style="font-size:11px;color:var(--yellow-text);display:flex;justify-content:space-between;padding:2px 0;border-top:1px solid #FAC775;">
+        <span>${d.name}</span>
+        <span style="font-family:'DM Mono',monospace;font-weight:500;">${d.arr?fmtK(d.arr):'—'}</span>
+      </div>`).join('')}
+    </div>`:''}
     <div class="scenario-summary">${summaryCards}${totalCard}</div>
     <div class="table-wrap">
       <table>
@@ -1540,6 +1625,16 @@ document.getElementById('csv-input').addEventListener('change',async function(e)
     setStatus('Importing deals...','info');
     deals=[];
 
+    // Load previous snapshot's deals to carry forward conviction data
+    let prevDeals={};
+    if(snapshots.length>1){
+      try{
+        const prevSnapId=snapshots[1].id; // second most recent = previous week
+        const prevRows=await sbGet('deals',`select=*&snapshot_id=eq.${prevSnapId}`);
+        prevRows.forEach(r=>{ prevDeals[r.name.toLowerCase()]=dbToDeal(r); });
+      }catch(e){console.warn('Could not load previous snapshot',e);}
+    }
+
     for(let i=1;i<lines.length;i++){
       if(!lines[i].trim())continue;
       const vals=parseCSVLine(lines[i]);
@@ -1553,8 +1648,24 @@ document.getElementById('csv-input').addEventListener('change',async function(e)
         amount:cleanNum(row['amount']),
         arr:cleanNum(row['arr'])||cleanNum(row['amount']),
       };
+
+      // Carry forward conviction from previous snapshot — reset tier and sentiment
+      const prev=prevDeals[name.toLowerCase()];
+      const newDeal={
+        ...hubFields,
+        tier:null,         // blank — forces re-evaluation
+        sentiment:null,    // blank — forces re-evaluation
+        pattern:prev?.pattern||'',
+        nextMove:prev?.nextMove||'',
+        nstw:prev?.nstw||'',
+        capability:prev?.capability||'unaware',
+        impact:prev?.impact||'unaware',
+        urgency:prev?.urgency||'unaware',
+        path:prev?.path||'unaware',
+        notes:prev?.notes||'',
+      };
+
       try{
-        const newDeal={...hubFields,tier:4,sentiment:'y',pattern:'',nextMove:'',nstw:'',capability:'unaware',impact:'unaware',urgency:'unaware',path:'unaware',notes:''};
         const inserted=await sbInsert('deals',dealToDb(newDeal,snapId));
         newDeal.id=inserted[0].id;
         deals.push(newDeal);
