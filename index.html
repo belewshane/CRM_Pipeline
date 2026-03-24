@@ -843,9 +843,9 @@ async function setActivity(dealId,day,val){
   } else {
     delete schedule[wk][key];
   }
-  const cell=document.getElementById(`cell-${dealId}-${day}`);
-  if(cell)cell.innerHTML=cellInner(dealId,day,val);
+  renderScheduleView();
 }
+
 
 function cellInner(dealId,day,val){
   const activity=typeof val==='object'?val?.activity:val;
@@ -867,9 +867,9 @@ async function clearActivity(dealId,day){
   const existing=schedule[wk]?.[key];
   await saveScheduleActivity(dealId,day,wk,'',existing?.rowId);
   if(schedule[wk])delete schedule[wk][key];
-  const cell=document.getElementById(`cell-${dealId}-${day}`);
-  if(cell)cell.innerHTML=cellInner(dealId,day,'');
+  renderScheduleView();
 }
+
 
 
 function toggleNoTouch(dealId){
