@@ -1064,15 +1064,12 @@ async function loadScenarios(){
 
 async function saveScenario(){
   if(!activeScenario)return;
-  // Store deal names so they resolve across snapshots
   const names=deals.filter(d=>scenarioChecked.has(d.id)).map(d=>d.name);
   scenarios[activeScenario]=names;
   try{
-    // Try Supabase upsert
     await sbDelete('scenarios',`name=eq.${encodeURIComponent(activeScenario)}`);
-    await sbInsert('scenarios',{name:activeScenario,deal_ids:JSON.stringify(ids)});
+    await sbInsert('scenarios',{name:activeScenario,deal_ids:JSON.stringify(names)});
   }catch(e){
-    // Fallback to localStorage
     localStorage.setItem('crm_scenarios',JSON.stringify(scenarios));
   }
   renderScenarioView();
