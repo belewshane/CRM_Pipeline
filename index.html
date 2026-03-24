@@ -1418,17 +1418,19 @@ function trackConvictionUpdate(dealId){
 
 function renderMetricsView(){
   const weeks=[];
-  for(let i=0;i<8;i++){
+  // 3 past + current + 3 future = offsets -3 to +3
+  for(let i=-3;i<=3;i++){
     const now=new Date();
     const day=now.getDay();
-    const diff=now.getDate()-day+(day===0?-6:1)-(i*7);
+    const diff=now.getDate()-day+(day===0?-6:1)+(i*7);
     const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);
     const wk=`metrics-${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
     const label=`${MONTHS[mon.getMonth()]} ${mon.getDate()}`;
-    weeks.unshift({wk,label,isCurrent:i===0});
+    const isFuture=i>0;
+    weeks.push({wk,label,isCurrent:i===0,isFuture});
   }
 
-  const headerCells=weeks.map(w=>`<th style="min-width:88px;${w.isCurrent?'color:var(--text);font-weight:600;':''}">${w.label}${w.isCurrent?'<br><span style="font-size:9px;font-weight:400;text-transform:none;letter-spacing:0;">this week</span>':''}</th>`).join('');
+  const headerCells=weeks.map(w=>`<th style="min-width:88px;${w.isCurrent?'color:var(--text);font-weight:600;':w.isFuture?'color:var(--text3);':''}">${w.label}${w.isCurrent?'<br><span style="font-size:9px;font-weight:400;text-transform:none;letter-spacing:0;">this week</span>':''}</th>`).join('');
 
   const fmtVal=(v,fmt)=>{
     if(v===null||v===undefined)return'';
@@ -1450,9 +1452,9 @@ function renderMetricsView(){
       const pct=wGoal>0&&actual!=null?Math.round((actual/wGoal)*100):null;
       const cls=getPctClass(pct);
       const display=fmtVal(actual,m.fmt);
-      const bg=w.isCurrent?'background:var(--surface2);':'';
+      const bg=w.isCurrent?'background:var(--surface2);':w.isFuture?'background:#FAFAF8;':'';
       if(m.auto){
-        return`<td style="${bg}text-align:center;">${display?`<span class="${cls}" style="font-size:12px;font-weight:500;font-family:'DM Mono',monospace;">${display}</span>`:`<span style="color:var(--text3);font-size:11px;">auto</span>`}</td>`;
+        return`<td style="${bg}text-align:center;">${display?`<span class="${cls}" style="font-size:12px;font-weight:500;font-family:'DM Mono',monospace;">${display}</span>`:`<span style="color:var(--text3);font-size:11px;">${w.isFuture?'·':'auto'}</span>`}</td>`;
       }
       return`<td style="${bg}text-align:center;cursor:text;" onclick="startEditMetricActual('${w.wk}','${m.id}',this)">${display?`<span class="${cls}" style="font-size:12px;font-weight:500;font-family:'DM Mono',monospace;">${display}</span>`:`<span style="color:var(--text3);">—</span>`}</td>`;
     }).join('');
@@ -1460,7 +1462,7 @@ function renderMetricsView(){
     const goalCells=weeks.map(w=>{
       const wGoal=getWkGoal(w.wk);
       const display=fmtVal(wGoal,m.fmt);
-      const bg=w.isCurrent?'background:var(--surface2);':'';
+      const bg=w.isCurrent?'background:var(--surface2);':w.isFuture?'background:#FAFAF8;':'';
       return`<td style="${bg}text-align:center;cursor:text;font-size:11px;color:var(--text2);" onclick="startEditWeekGoal('${w.wk}','${m.id}',this)">${display}</td>`;
     }).join('');
 
