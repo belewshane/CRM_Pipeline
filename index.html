@@ -1645,8 +1645,8 @@ document.getElementById('csv-input').addEventListener('change',async function(e)
         name,
         closeDate:cleanDate(row['closedate']||row['close']||''),
         stage:row['dealstage']||row['stage']||'',
-        amount:cleanNum(row['amount']),
-        arr:cleanNum(row['arr'])||cleanNum(row['amount']),
+        amount:cleanNum(row['amount'])||cleanNum(row['amountarr']),
+        arr:cleanNum(row['arr'])||cleanNum(row['amountarr'])||cleanNum(row['amount']),
       };
 
       // Carry forward conviction from previous snapshot — reset tier and sentiment
