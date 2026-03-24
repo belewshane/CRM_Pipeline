@@ -222,6 +222,24 @@
   .quota-edit-btn:hover{color:var(--text2);}
   .quota-edit-wrap{display:flex;align-items:center;gap:6px;}
   .quota-input{font-family:'DM Mono',monospace;font-size:12px;padding:3px 8px;border:1px solid var(--border2);border-radius:var(--radius);width:80px;background:var(--surface);color:var(--text);}
+
+  /* Metrics */
+  .metrics-table{width:100%;border-collapse:collapse;table-layout:auto;}
+  .metrics-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface2);text-align:center;white-space:nowrap;}
+  .metrics-table th.metric-name-h{text-align:left;width:180px;}
+  .metrics-table th.goal-h{text-align:center;width:60px;}
+  .metrics-table td{padding:5px 10px;font-size:12px;vertical-align:middle;border-bottom:1px solid var(--border);text-align:center;}
+  .metrics-table td.metric-name{text-align:left;font-weight:500;font-size:12px;color:var(--text);}
+  .metrics-table td.metric-goal{font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;cursor:text;}
+  .metrics-table td.metric-goal:hover{background:var(--surface2);border-radius:4px;color:var(--text);}
+  .metrics-table tr.metric-group-header td{background:var(--surface2);font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;padding:5px 12px;border-top:2px solid var(--border2);}
+  .metric-actual{font-size:12px;font-family:'DM Mono',monospace;font-weight:500;}
+  .metric-pct{font-size:10px;margin-top:1px;}
+  .m-green{color:var(--green-text);background:var(--green-bg);border-radius:4px;padding:2px 6px;}
+  .m-yellow{color:var(--yellow-text);background:var(--yellow-bg);border-radius:4px;padding:2px 6px;}
+  .m-red{color:var(--red-text);background:var(--red-bg);border-radius:4px;padding:2px 6px;}
+  .m-empty{color:var(--text3);}
+  .metric-auto{font-size:10px;color:var(--text3);font-style:italic;}
   ::-webkit-scrollbar{width:6px;}
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
@@ -257,6 +275,7 @@
   <button class="view-tab" onclick="switchView('grid',this)">12-box grid</button>
   <button class="view-tab" onclick="switchView('scenario',this)">Scenario</button>
   <button class="view-tab" onclick="switchView('schedule',this)">Schedule</button>
+  <button class="view-tab" onclick="switchView('metrics',this)">Metrics</button>
 </div>
 
 <div class="layout">
@@ -1223,6 +1242,272 @@ function renderScenarioView(){
     </div>`;
 }
 
+
+// ── METRICS ──
+const METRIC_DEFS = [
+  {id:'accounts',    label:'Accounts researched',     goal:15,  auto:false, fmt:'num'},
+  {id:'dials',       label:'Dials',                   goal:60,  auto:false, fmt:'num'},
+  {id:'connects',    label:'Connects',                goal:6,   auto:false, fmt:'num'},
+  {id:'discovery',   label:'Discovery calls held',    goal:10,  auto:false, fmt:'num'},
+  {id:'quality',     label:'Quality meetings',        goal:6,   auto:false, fmt:'num'},
+  {id:'conviction',  label:'Conviction updates',      goal:4,   auto:true,  fmt:'num'},
+  {id:'newdeals',    label:'New qualified deals',     goal:2,   auto:false, fmt:'num'},
+  {id:'proposals',   label:'Proposals sent',          goal:1,   auto:false, fmt:'num'},
+  {id:'pipeline',    label:'Qualified pipeline ($)',  goal:80000,auto:false, fmt:'money'},
+];
+
+let metricsData = {};      // {weekKey: {metricId: {actual, goal}}}
+let metricGoals = {};      // overridden goals {metricId: goal}
+let convictionUpdateCount = 0; // auto-tracked this session
+
+async function loadMetrics(){
+  try{
+    const rows = await sbGet('metrics','select=*');
+    metricsData = {};
+    rows.forEach(r=>{
+      if(!metricsData[r.week_key])metricsData[r.week_key]={};
+      metricsData[r.week_key][r.metric_id]={actual:r.actual, goal:r.goal, rowId:r.id};
+    });
+    // Load goal overrides
+    const goals = await sbGet('metric_goals','select=*');
+    metricGoals = {};
+    goals.forEach(r=>{metricGoals[r.metric_id]=r.goal;});
+  }catch(e){
+    // Tables may not exist yet — use localStorage
+    const d = localStorage.getItem('crm_metrics');
+    if(d)metricsData=JSON.parse(d);
+    const g = localStorage.getItem('crm_metric_goals');
+    if(g)metricGoals=JSON.parse(g);
+  }
+}
+
+function getMetricWeekKey(){
+  // Use current Monday-based week key
+  const now=new Date();
+  const day=now.getDay();
+  const diff=now.getDate()-day+(day===0?-6:1);
+  const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);
+  return`metrics-${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
+}
+
+function getMetricGoal(m){
+  return metricGoals[m.id]!==undefined ? metricGoals[m.id] : m.goal;
+}
+
+function getPctClass(pct){
+  if(pct===null||pct===undefined)return'm-empty';
+  if(pct>=80)return'm-green';
+  if(pct>=50)return'm-yellow';
+  return'm-red';
+}
+
+async function saveMetricActual(weekKey, metricId, actual){
+  const goal = getMetricGoal(METRIC_DEFS.find(m=>m.id===metricId));
+  if(!metricsData[weekKey])metricsData[weekKey]={};
+  const existing = metricsData[weekKey][metricId];
+  try{
+    if(existing?.rowId){
+      await sbUpdate('metrics',existing.rowId,{actual,goal,updated_at:new Date().toISOString()});
+      metricsData[weekKey][metricId].actual=actual;
+    } else {
+      const rows=await sbInsert('metrics',{week_key:weekKey,metric_id:metricId,actual,goal});
+      metricsData[weekKey][metricId]={actual,goal,rowId:rows[0].id};
+    }
+  }catch(e){
+    // localStorage fallback
+    if(!metricsData[weekKey])metricsData[weekKey]={};
+    metricsData[weekKey][metricId]={actual,goal};
+    localStorage.setItem('crm_metrics',JSON.stringify(metricsData));
+  }
+}
+
+async function saveMetricGoal(metricId, goal){
+  metricGoals[metricId]=goal;
+  try{
+    // Try upsert
+    await sbDelete('metric_goals',`metric_id=eq.${metricId}`);
+    await sbInsert('metric_goals',{metric_id:metricId,goal});
+  }catch(e){
+    localStorage.setItem('crm_metric_goals',JSON.stringify(metricGoals));
+  }
+}
+
+function startEditMetricActual(weekKey, metricId, el){
+  const existing = metricsData[weekKey]?.[metricId];
+  const cur = existing?.actual!==undefined ? existing.actual : '';
+  const m = METRIC_DEFS.find(x=>x.id===metricId);
+  const input=document.createElement('input');
+  input.className='next-move-input';
+  input.value=cur;
+  input.style.width='60px';
+  input.style.textAlign='center';
+  el.replaceWith(input);
+  input.focus();input.select();
+  const finish=async()=>{
+    const raw=input.value.trim().replace(/[$k,]/gi,'');
+    const val = m.fmt==='money' ? parseFloat(raw)*( input.value.includes('k')||input.value.includes('K')?1000:1) : parseFloat(raw);
+    const finalVal = isNaN(val)?null:val;
+    await saveMetricActual(weekKey,metricId,finalVal);
+    renderMetricsView();
+  };
+  input.addEventListener('blur',finish);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();input.blur();}
+    if(e.key==='Escape'){renderMetricsView();}
+  });
+}
+
+function startEditMetricGoal(metricId, el){
+  const m = METRIC_DEFS.find(x=>x.id===metricId);
+  const cur = getMetricGoal(m);
+  const input=document.createElement('input');
+  input.className='next-move-input';
+  input.value=m.fmt==='money'?cur/1000:cur;
+  input.style.width='50px';
+  input.style.textAlign='center';
+  el.replaceWith(input);
+  input.focus();input.select();
+  const finish=async()=>{
+    const raw=input.value.trim().replace(/[$k,]/gi,'');
+    const val = m.fmt==='money' ? parseFloat(raw)*1000 : parseFloat(raw);
+    if(!isNaN(val)){await saveMetricGoal(metricId,val);}
+    renderMetricsView();
+  };
+  input.addEventListener('blur',finish);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();input.blur();}
+    if(e.key==='Escape'){renderMetricsView();}
+  });
+}
+
+// Auto-track conviction updates (only for existing deals, not new imports)
+let convictionUpdatesThisWeek = {};  // {weekKey: Set of dealIds updated}
+
+async function startEditWeekGoal(weekKey, metricId, el){
+  const m=METRIC_DEFS.find(x=>x.id===metricId);
+  const cur=metricsData[weekKey]?.[metricId+'_goal']?.actual??getMetricGoal(m);
+  const input=document.createElement('input');
+  input.className='next-move-input';
+  input.value=m.fmt==='money'?cur/1000:cur;
+  input.style.width='60px';
+  input.style.textAlign='center';
+  el.replaceWith(input);
+  input.focus();input.select();
+  const finish=async()=>{
+    const raw=input.value.trim().replace(/[$k,]/gi,'');
+    const val=m.fmt==='money'?parseFloat(raw)*1000:parseFloat(raw);
+    if(!isNaN(val)){
+      await saveMetricActual(weekKey,metricId+'_goal',val);
+    }
+    renderMetricsView();
+  };
+  input.addEventListener('blur',finish);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();input.blur();}
+    if(e.key==='Escape'){renderMetricsView();}
+  });
+}
+function trackConvictionUpdate(dealId){
+  const wk=getMetricWeekKey();
+  if(!convictionUpdatesThisWeek[wk])convictionUpdatesThisWeek[wk]=new Set();
+  convictionUpdatesThisWeek[wk].add(dealId);
+  // Auto-save count
+  const count=convictionUpdatesThisWeek[wk].size;
+  saveMetricActual(wk,'conviction',count);
+}
+
+function renderMetricsView(){
+  const weeks=[];
+  for(let i=0;i<8;i++){
+    const now=new Date();
+    const day=now.getDay();
+    const diff=now.getDate()-day+(day===0?-6:1)-(i*7);
+    const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);
+    const wk=`metrics-${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
+    const label=`${MONTHS[mon.getMonth()]} ${mon.getDate()}`;
+    weeks.unshift({wk,label,isCurrent:i===0});
+  }
+
+  const headerCells=weeks.map(w=>`<th style="min-width:88px;${w.isCurrent?'color:var(--text);font-weight:600;':''}">${w.label}${w.isCurrent?'<br><span style="font-size:9px;font-weight:400;text-transform:none;letter-spacing:0;">this week</span>':''}</th>`).join('');
+
+  const fmtVal=(v,fmt)=>{
+    if(v===null||v===undefined)return'';
+    if(fmt==='money')return'$'+(v>=1000?(v/1000).toFixed(0)+'k':v);
+    return v;
+  };
+
+  let rows='';
+  METRIC_DEFS.forEach(m=>{
+    const getWkGoal=wk=>{
+      const g=metricsData[wk]?.[m.id+'_goal'];
+      return g?.actual!==undefined?g.actual:getMetricGoal(m);
+    };
+
+    const actualCells=weeks.map(w=>{
+      const entry=metricsData[w.wk]?.[m.id];
+      const actual=entry?.actual;
+      const wGoal=getWkGoal(w.wk);
+      const pct=wGoal>0&&actual!=null?Math.round((actual/wGoal)*100):null;
+      const cls=getPctClass(pct);
+      const display=fmtVal(actual,m.fmt);
+      const bg=w.isCurrent?'background:var(--surface2);':'';
+      if(m.auto){
+        return`<td style="${bg}text-align:center;">${display?`<span class="${cls}" style="font-size:12px;font-weight:500;font-family:'DM Mono',monospace;">${display}</span>`:`<span style="color:var(--text3);font-size:11px;">auto</span>`}</td>`;
+      }
+      return`<td style="${bg}text-align:center;cursor:text;" onclick="startEditMetricActual('${w.wk}','${m.id}',this)">${display?`<span class="${cls}" style="font-size:12px;font-weight:500;font-family:'DM Mono',monospace;">${display}</span>`:`<span style="color:var(--text3);">—</span>`}</td>`;
+    }).join('');
+
+    const goalCells=weeks.map(w=>{
+      const wGoal=getWkGoal(w.wk);
+      const display=fmtVal(wGoal,m.fmt);
+      const bg=w.isCurrent?'background:var(--surface2);':'';
+      return`<td style="${bg}text-align:center;cursor:text;font-size:11px;color:var(--text2);" onclick="startEditWeekGoal('${w.wk}','${m.id}',this)">${display}</td>`;
+    }).join('');
+
+    const pctCells=weeks.map(w=>{
+      const entry=metricsData[w.wk]?.[m.id];
+      const actual=entry?.actual;
+      const wGoal=getWkGoal(w.wk);
+      if(actual==null||!wGoal)return`<td style="text-align:center;font-size:11px;color:var(--text3);">—</td>`;
+      const pct=Math.round((actual/wGoal)*100);
+      const col=pct>=80?'var(--green)':pct>=50?'var(--yellow)':'var(--red)';
+      return`<td style="text-align:center;font-size:11px;font-weight:500;color:${col};">${pct}%</td>`;
+    }).join('');
+
+    const autoTag=m.auto?` <span style="font-size:9px;color:var(--text3);font-weight:400;">(auto)</span>`:'';
+    rows+=`
+      <tr style="border-top:2px solid var(--border2);">
+        <td class="metric-name" rowspan="3" style="vertical-align:middle;border-right:1px solid var(--border);">${m.label}${autoTag}</td>
+        <td style="font-size:10px;color:var(--text3);padding:4px 10px;white-space:nowrap;">Actual</td>
+        ${actualCells}
+      </tr>
+      <tr>
+        <td style="font-size:10px;color:var(--text3);padding:4px 10px;white-space:nowrap;">Goal</td>
+        ${goalCells}
+      </tr>
+      <tr>
+        <td style="font-size:10px;color:var(--text3);padding:4px 10px;white-space:nowrap;">% to goal</td>
+        ${pctCells}
+      </tr>`;
+  });
+
+  document.getElementById('main-panel').innerHTML=`
+    <div class="panel-header">
+      <div class="panel-title">Metrics</div>
+      <div style="font-size:11px;color:var(--text3);">Click Actual or Goal to edit inline</div>
+    </div>
+    <div class="table-wrap">
+      <table class="metrics-table">
+        <thead><tr>
+          <th style="width:150px;text-align:left;">Metric</th>
+          <th style="width:65px;"></th>
+          ${headerCells}
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function render(){
   if(currentView==='tier')renderTierView();
   else if(currentView==='status')renderStatusView();
@@ -1231,6 +1516,7 @@ function render(){
   else if(currentView==='grid')renderGridView();
   else if(currentView==='scenario')renderScenarioView();
   else if(currentView==='schedule')renderScheduleView();
+  else if(currentView==='metrics')renderMetricsView();
 }
 
 function emptyState(){
@@ -1436,6 +1722,8 @@ async function setState(dimIdx,state){
   const d=deals.find(x=>x.id===activeDeal.id);
   if(d){d[keys[dimIdx]]=state;activeDeal=d;}
   await saveOneDeal(activeDeal);
+  // Only track conviction updates for existing deals (not fresh imports)
+  if(d&&d.id&&dbLoaded)trackConvictionUpdate(d.id);
   renderConviction();
 }
 
@@ -1685,7 +1973,7 @@ async function init(){
   document.getElementById('main-panel').innerHTML='<div style="padding:2rem;color:var(--text3);font-size:13px;">Loading pipeline...</div>';
   try{
     await loadSnapshots();
-    await Promise.all([loadDeals(), loadSchedule(), loadScenarios()]);
+    await Promise.all([loadDeals(), loadSchedule(), loadScenarios(), loadMetrics()]);
   }catch(e){
     console.warn('Init error',e);
     deals=[];
