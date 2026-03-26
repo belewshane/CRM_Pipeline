@@ -911,10 +911,10 @@ function renderScheduleView(){
         return val&&val.activity==='meeting';
       });
 
-      // Any activity (meeting/called/emailed) makes name green
+      // Any MEETING makes name green (called/emailed do not)
       const hasAnyActivity=days.some(day=>{
         const val=schedule[wk][`${d.id}__${day}`];
-        return val&&val.activity;
+        return val&&val.activity==='meeting';
       });
 
       const cells=days.map((day,idx)=>{
