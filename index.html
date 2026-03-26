@@ -452,7 +452,7 @@ function startEditNextMove(dealId, el){
     newTd.className='next-move-cell';
     newTd.title=val;
     newTd.textContent=val;
-    newTd.onclick=function(){startEditNextMove(dealId,this);};
+    newTd.onclick=function(e){e.stopPropagation();startEditNextMove(dealId,this);};
     input.replaceWith(newTd);
     await saveNextMove(dealId,val);
   };
@@ -571,7 +571,7 @@ function tableHTML(sorted, groupKey){
         <td><span class="stage-badge ${stageClass}">${d.stage||''}</span></td>
         ${cells}
         <td class="num" style="font-weight:500;font-family:'DM Mono',monospace;">${fmtK(d.arr)}</td>
-        <td class="next-move-cell" title="${nm.replace(/"/g,'&quot;')}" onclick="startEditNextMove(${d.id},this)">${nm}</td>
+        <td class="next-move-cell" title="${nm.replace(/"/g,'&quot;')}" onclick="event.stopPropagation();startEditNextMove(${d.id},this)">${nm}</td>
       </tr>`;
     });
 
@@ -674,7 +674,7 @@ function renderConvictionView(){
         <td style="text-align:center;">${stateChip(d.impact||'unaware')}</td>
         <td style="text-align:center;">${stateChip(d.urgency||'unaware')}</td>
         <td style="text-align:center;">${stateChip(d.path||'unaware')}</td>
-        <td class="next-move-cell" title="${(d.nextMove||'').replace(/"/g,'&quot;')}" onclick="startEditNextMove(${d.id},this)">${d.nextMove||''}</td>
+        <td class="next-move-cell" title="${(d.nextMove||'').replace(/"/g,'&quot;')}" onclick="event.stopPropagation();startEditNextMove(${d.id},this)">${d.nextMove||''}</td>
       </tr>`;
     });
     rows+=`<tr class="subtotal-row" style="cursor:default;">
@@ -905,8 +905,14 @@ function renderScheduleView(){
       const noTouchKey=`notouch__${d.id}`;
       const isNoTouch=!!(schedule[wk][noTouchKey]);
 
-      // Find earliest day with an activity this week
+      // Find earliest MEETING this week (only meetings trigger green leading days)
       const firstActivityIdx=days.findIndex(day=>{
+        const val=schedule[wk][`${d.id}__${day}`];
+        return val&&val.activity==='meeting';
+      });
+
+      // Any activity (meeting/called/emailed) makes name green
+      const hasAnyActivity=days.some(day=>{
         const val=schedule[wk][`${d.id}__${day}`];
         return val&&val.activity;
       });
@@ -920,7 +926,7 @@ function renderScheduleView(){
         return`<td class="day-cell" style="background:${bg};"><div class="cell-wrap" id="cell-${d.id}-${day}">${cellInner(d.id,day,val)}</div></td>`;
       }).join('');
 
-      const rowFullGreen=isNoTouch;
+      const rowFullGreen=isNoTouch||hasAnyActivity;
       const nameBg=rowFullGreen?'var(--green-row)':'var(--surface)';
       const nameColor=rowFullGreen?'var(--green-text)':'inherit';
       const tierBg=rowFullGreen?'var(--green-row)':'var(--surface)';
