@@ -240,6 +240,41 @@
   .m-red{color:var(--red-text);background:var(--red-bg);border-radius:4px;padding:2px 6px;}
   .m-empty{color:var(--text3);}
   .metric-auto{font-size:10px;color:var(--text3);font-style:italic;}
+
+  /* Scenario planning */
+  .sp-layout{display:grid;grid-template-columns:1fr 1fr;gap:12px;height:calc(100vh - 220px);}
+  .sp-left{overflow-y:auto;}
+  .sp-right{display:flex;flex-direction:column;gap:10px;overflow-y:auto;}
+  .sp-deal-row{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);cursor:grab;transition:all .12s;font-size:12px;}
+  .sp-deal-row:hover{border-color:var(--border2);background:var(--surface2);}
+  .sp-deal-row.in-bucket-b1{border-left:3px solid #378ADD;}
+  .sp-deal-row.in-bucket-b2{border-left:3px solid #BA7517;}
+  .sp-deal-row.in-bucket-b3{border-left:3px solid #993556;}
+  .sp-deal-name{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sp-deal-arr{font-size:11px;font-family:'DM Mono',monospace;color:var(--text2);}
+  .sp-bucket{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px;display:flex;flex-direction:column;gap:6px;min-height:80px;flex:1;}
+  .sp-bucket.drag-over{border-color:var(--border2);outline:2px dashed var(--border2);}
+  .sp-bucket-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .sp-bucket-label{font-size:11px;font-weight:600;color:var(--text2);}
+  .sp-bucket-math{font-size:12px;font-weight:600;font-family:'DM Mono',monospace;}
+  .sp-type-toggle{display:flex;gap:3px;}
+  .sp-type-btn{font-family:'DM Sans',sans-serif;font-size:10px;padding:3px 8px;border-radius:20px;border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text2);transition:all .12s;}
+  .sp-type-btn.active{background:var(--green-bg);border-color:#0F6E56;color:var(--green-text);}
+  .sp-bucket-deal{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);font-size:11px;}
+  .sp-bucket-deal-name{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sp-bucket-deal-arr{font-family:'DM Mono',monospace;color:var(--text2);}
+  .sp-remove{background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;line-height:1;padding:0;}
+  .sp-remove:hover{color:var(--red);}
+  .sp-target-row{display:flex;align-items:center;gap:12px;margin-bottom:1rem;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);}
+  .sp-target-label{font-size:12px;font-weight:500;color:var(--text2);}
+  .sp-target-input{font-family:'DM Mono',monospace;font-size:14px;font-weight:600;width:100px;padding:4px 8px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);}
+  .sp-gap{font-size:13px;font-weight:600;font-family:'DM Mono',monospace;}
+  .sp-gap.ok{color:var(--green-text);}
+  .sp-gap.short{color:var(--red-text);}
+  .sp-total-row{display:flex;gap:16px;align-items:center;}
+  .sp-total-item{font-size:11px;color:var(--text2);}
+  .sp-total-item span{font-weight:600;font-family:'DM Mono',monospace;color:var(--text);}
+  .sp-tier-divider{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:6px 0 2px;border-top:1px solid var(--border);margin-top:4px;}
   ::-webkit-scrollbar{width:6px;}
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
@@ -1043,6 +1078,15 @@ function saveQuotaEdit(){
 // ── SCENARIO STATE ──
 const SCENARIO_NAMES=['Best case','Upside','Stretch'];
 let scenarioChecked=new Set();
+let scenarioSubTab='forecast'; // 'forecast' | 'planning'
+
+// Scenario planning state
+let spBuckets=[
+  {id:'b1', type:1, deals:[]}, // type = 1 (need one of) or 2 (need two of)
+  {id:'b2', type:1, deals:[]},
+  {id:'b3', type:1, deals:[]},
+];
+let spDragDealId=null;
 let activeScenario=null; // 'Best case' | 'Upside' | 'Stretch' | null
 let scenarios={}; // {name: [id, id, ...]}
 
@@ -1104,7 +1148,171 @@ function toggleScenario(id){
   renderScenarioView();
 }
 
+
+// ── SCENARIO PLANNING ──
+function spGetBucketContrib(bucket){
+  const n = bucket.type;
+  if(!bucket.deals.length) return 0;
+  const sorted = [...bucket.deals]
+    .map(id => deals.find(d=>d.id===id))
+    .filter(Boolean)
+    .sort((a,b)=>(a.arr||0)-(b.arr||0)); // ascending — take lowest n
+  return sorted.slice(0,n).reduce((s,d)=>s+(d.arr||0),0);
+}
+
+function spGetTarget(){
+  const inp = document.getElementById('sp-target');
+  if(inp) return parseFloat(inp.value.replace(/[$k,]/gi,''))*(inp.value.toLowerCase().includes('k')?1000:1)||0;
+  const remaining = Math.max((quotaData.quota||0)-(quotaData.closed||0),0);
+  return remaining;
+}
+
+function spDefaultTarget(){
+  return Math.max((quotaData.quota||0)-(quotaData.closed||0),0);
+}
+
+function spGetBucketInId(dealId){
+  return spBuckets.find(b=>b.deals.includes(dealId))?.id||null;
+}
+
+function spToggleBucketType(bucketId, type){
+  const b = spBuckets.find(x=>x.id===bucketId);
+  if(b){ b.type=type; renderScenarioPlanning(); }
+}
+
+function spRemoveDeal(bucketId, dealId){
+  const b = spBuckets.find(x=>x.id===bucketId);
+  if(b){ b.deals=b.deals.filter(id=>id!==dealId); renderScenarioPlanning(); }
+}
+
+function spDragStart(e, dealId){
+  spDragDealId=dealId;
+  e.dataTransfer.effectAllowed='copy';
+  setTimeout(()=>{ const el=document.getElementById('sp-deal-'+dealId); if(el)el.style.opacity='0.5'; },0);
+}
+function spDragEnd(e){
+  if(spDragDealId){ const el=document.getElementById('sp-deal-'+spDragDealId); if(el)el.style.opacity='1'; }
+}
+function spDrop(e, bucketId){
+  e.preventDefault();
+  document.querySelectorAll('.sp-bucket').forEach(b=>b.classList.remove('drag-over'));
+  if(spDragDealId===null)return;
+  const b=spBuckets.find(x=>x.id===bucketId);
+  if(b&&!b.deals.includes(spDragDealId)){
+    b.deals.push(spDragDealId);
+    renderScenarioPlanning();
+  }
+  spDragDealId=null;
+}
+
+const BUCKET_COLORS={b1:'#378ADD',b2:'#BA7517',b3:'#993556'};
+const BUCKET_NAMES={b1:'Bucket 1',b2:'Bucket 2',b3:'Bucket 3'};
+
+function renderScenarioPlanning(){
+  if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
+  const sorted=[...deals].sort((a,b)=>(a.tier||99)-(b.tier||99)||b.arr-a.arr);
+  const tiers=[...new Set(sorted.map(d=>d.tier||99))].sort();
+  const target=spGetTarget()||spDefaultTarget();
+  const totalContrib=spBuckets.reduce((s,b)=>s+spGetBucketContrib(b),0);
+  const gap=target-totalContrib;
+  const gapClass=gap<=0?'ok':'short';
+  const gapLabel=gap<=0?`✓ ${fmtK(Math.abs(gap))} over target`:`${fmtK(gap)} to go`;
+
+  const subTabsHtml=`<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1rem;">
+    <button onclick="scenarioSubTab='forecast';renderScenarioView();" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;">Forecast</button>
+    <button onclick="scenarioSubTab='planning';renderScenarioView();" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text);font-weight:500;border-bottom:2px solid var(--text);margin-bottom:-1px;">Scenario planning</button>
+  </div>`;
+
+  // Left: deal list
+  let dealRows='';
+  tiers.forEach(tier=>{
+    const group=sorted.filter(d=>(d.tier||99)===tier);
+    const tierLabel=tier===99?'Unset':`Tier ${tier}`;
+    dealRows+=`<div class="sp-tier-divider">${tierLabel}</div>`;
+    group.forEach(d=>{
+      const bucketId=spGetBucketInId(d.id);
+      const borderColor=bucketId?BUCKET_COLORS[bucketId]:'transparent';
+      const flags=getFlagDots(d.sentiment);
+      const flagHtml=`<div class="flags">${flags.map(f=>`<div class="flag ${f}"></div>`).join('')}</div>`;
+      dealRows+=`<div class="sp-deal-row" id="sp-deal-${d.id}"
+        draggable="true"
+        ondragstart="spDragStart(event,${d.id})"
+        ondragend="spDragEnd(event)"
+        style="border-left:3px solid ${borderColor};"
+        onclick="openDeal(${d.id})">
+        ${flagHtml}
+        <span class="sp-deal-name">${d.name}</span>
+        <span class="sp-deal-arr">${fmtK(d.arr)}</span>
+        ${bucketId?`<span style="font-size:9px;color:${BUCKET_COLORS[bucketId]};font-weight:600;">B${bucketId.slice(1)}</span>`:''}
+      </div>`;
+    });
+  });
+
+  // Right: buckets
+  let bucketHtml='';
+  spBuckets.forEach((b,i)=>{
+    const contrib=spGetBucketContrib(b);
+    const color=BUCKET_COLORS[b.id];
+    const dealCards=b.deals.map(id=>{
+      const d=deals.find(x=>x.id===id);
+      if(!d)return'';
+      return`<div class="sp-bucket-deal">
+        <span class="sp-bucket-deal-name">${d.name}</span>
+        <span class="sp-bucket-deal-arr">${fmtK(d.arr)}</span>
+        <button class="sp-remove" onclick="event.stopPropagation();spRemoveDeal('${b.id}',${id})">×</button>
+      </div>`;
+    }).join('');
+
+    bucketHtml+=`<div class="sp-bucket" id="bucket-${b.id}"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="spDrop(event,'${b.id}')">
+      <div class="sp-bucket-header">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+          <span class="sp-bucket-label" style="color:${color};">Need ${b.type} of</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="sp-type-toggle">
+            <button class="sp-type-btn ${b.type===1?'active':''}" onclick="spToggleBucketType('${b.id}',1)">1 of</button>
+            <button class="sp-type-btn ${b.type===2?'active':''}" onclick="spToggleBucketType('${b.id}',2)">2 of</button>
+          </div>
+          <span class="sp-bucket-math" style="color:${color};">${contrib?fmtK(contrib):'—'}</span>
+        </div>
+      </div>
+      ${dealCards||`<div style="font-size:11px;color:var(--text3);text-align:center;padding:12px 0;">Drop deals here</div>`}
+    </div>`;
+  });
+
+  const targetVal=spDefaultTarget();
+  document.getElementById('main-panel').innerHTML=`
+    <div class="panel-header" style="margin-bottom:0;">
+      <div class="panel-title">Scenario</div>
+    </div>
+    ${subTabsHtml}
+    <div class="sp-target-row">
+      <span class="sp-target-label">Target</span>
+      <input class="sp-target-input" id="sp-target" value="${fmtK(targetVal)}" oninput="renderScenarioPlanning()" placeholder="$150k">
+      <div class="sp-total-row">
+        ${spBuckets.map(b=>`<div class="sp-total-item">B${b.id.slice(1)}: <span>${fmtK(spGetBucketContrib(b))}</span></div>`).join('')}
+        <div class="sp-total-item">Total: <span>${fmtK(totalContrib)}</span></div>
+      </div>
+      <div style="flex:1;"></div>
+      <span class="sp-gap ${gapClass}">${gapLabel}</span>
+    </div>
+    <div class="sp-layout">
+      <div class="sp-left">${dealRows}</div>
+      <div class="sp-right">${bucketHtml}</div>
+    </div>`;
+}
+
 function renderScenarioView(){
+  if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
+  if(scenarioSubTab==='planning'){renderScenarioPlanning();return;}
+  renderForecastView();
+}
+
+function renderForecastView(){
   if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
   const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
 
@@ -1207,11 +1415,17 @@ function renderScenarioView(){
     ?`<button onclick="saveScenario()" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 14px;border-radius:20px;border:1px solid #0F6E56;background:var(--green-bg);color:var(--green-text);cursor:pointer;font-weight:500;">Save ${activeScenario}</button>`
     :'';
 
+  const subTabsHtml=`<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1rem;">
+    <button onclick="scenarioSubTab='forecast';renderScenarioView();" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text);font-weight:500;border-bottom:2px solid var(--text);margin-bottom:-1px;">Forecast</button>
+    <button onclick="scenarioSubTab='planning';renderScenarioView();" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;">Scenario planning</button>
+  </div>`;
+
   document.getElementById('main-panel').innerHTML=`
     <div class="panel-header">
-      <div class="panel-title">Scenario planning</div>
+      <div class="panel-title">Scenario</div>
       <div style="font-size:12px;color:var(--text2);">${checkedCount} deal${checkedCount!==1?'s':''} selected</div>
     </div>
+    ${subTabsHtml}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:${scenarioMissingDeals.length?'8px':'1rem'};">
       ${pillsHtml}
       <div style="flex:1;"></div>
