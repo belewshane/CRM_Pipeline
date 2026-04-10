@@ -1208,6 +1208,38 @@ function spDrop(e, bucketId){
 const BUCKET_COLORS={b1:'#378ADD',b2:'#BA7517',b3:'#993556'};
 const BUCKET_NAMES={b1:'Bucket 1',b2:'Bucket 2',b3:'Bucket 3'};
 
+
+async function saveScenarioPlanning(){
+  const inp=document.getElementById('sp-target');
+  const targetVal=inp?inp.value:'';
+  const data={buckets:spBuckets,target:targetVal};
+  try{
+    await sbDelete('scenarios','name=eq.sp_planning');
+    await sbInsert('scenarios',{name:'sp_planning',deal_ids:JSON.stringify(data)});
+  }catch(e){
+    localStorage.setItem('crm_sp_planning',JSON.stringify(data));
+  }
+  setStatus('Scenario saved','ok');
+}
+
+async function loadScenarioPlanning(){
+  try{
+    const rows=await sbGet('scenarios','select=*&name=eq.sp_planning');
+    if(rows.length){
+      const data=JSON.parse(rows[0].deal_ids||'{}');
+      if(data.buckets)spBuckets=data.buckets;
+      if(data.target)setTimeout(()=>{const inp=document.getElementById('sp-target');if(inp)inp.value=data.target;},100);
+      return;
+    }
+  }catch(e){}
+  // localStorage fallback
+  const s=localStorage.getItem('crm_sp_planning');
+  if(s){
+    const data=JSON.parse(s);
+    if(data.buckets)spBuckets=data.buckets;
+    if(data.target)setTimeout(()=>{const inp=document.getElementById('sp-target');if(inp)inp.value=data.target;},100);
+  }
+}
 function renderScenarioPlanning(){
   if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
   const sorted=[...deals].sort((a,b)=>(a.tier||99)-(b.tier||99)||b.arr-a.arr);
@@ -1220,7 +1252,7 @@ function renderScenarioPlanning(){
 
   const subTabsHtml=`<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1rem;">
     <button onclick="scenarioSubTab='forecast';renderScenarioView();" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;">Forecast</button>
-    <button onclick="scenarioSubTab='planning';renderScenarioView();" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text);font-weight:500;border-bottom:2px solid var(--text);margin-bottom:-1px;">Scenario planning</button>
+    <button onclick="scenarioSubTab='planning';loadScenarioPlanning().then(()=>renderScenarioPlanning());" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text);font-weight:500;border-bottom:2px solid var(--text);margin-bottom:-1px;">Scenario planning</button>
   </div>`;
 
   // Left: deal list
@@ -1299,6 +1331,7 @@ function renderScenarioPlanning(){
       </div>
       <div style="flex:1;"></div>
       <span class="sp-gap ${gapClass}">${gapLabel}</span>
+      <button onclick="saveScenarioPlanning()" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 14px;border-radius:20px;border:1px solid #0F6E56;background:var(--green-bg);color:var(--green-text);cursor:pointer;font-weight:500;margin-left:10px;">Save</button>
     </div>
     <div class="sp-layout">
       <div class="sp-left">${dealRows}</div>
@@ -1417,7 +1450,7 @@ function renderForecastView(){
 
   const subTabsHtml=`<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1rem;">
     <button onclick="scenarioSubTab='forecast';renderScenarioView();" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text);font-weight:500;border-bottom:2px solid var(--text);margin-bottom:-1px;">Forecast</button>
-    <button onclick="scenarioSubTab='planning';renderScenarioView();" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;">Scenario planning</button>
+    <button onclick="scenarioSubTab='planning';loadScenarioPlanning().then(()=>renderScenarioPlanning());" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:8px 16px;border:none;background:transparent;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;">Scenario planning</button>
   </div>`;
 
   document.getElementById('main-panel').innerHTML=`
