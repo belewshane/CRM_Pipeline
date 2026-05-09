@@ -310,7 +310,7 @@
   <button class="view-tab" onclick="switchView('grid',this)">12-box grid</button>
   <button class="view-tab" onclick="switchView('scenario',this)">Scenario</button>
   <button class="view-tab" onclick="switchView('schedule',this)">Schedule</button>
-  <button class="view-tab" onclick="switchView('metrics',this)">Metrics</button>
+  <button class="view-tab" onclick="switchView('metrics',this)">Weekly pulse</button>
 </div>
 
 <div class="layout">
@@ -1494,271 +1494,194 @@ function renderForecastView(){
 
 
 // ── METRICS ──
-const METRIC_DEFS = [
-  {id:'accounts',    label:'Accounts researched',     goal:15,  auto:false, fmt:'num'},
-  {id:'dials',       label:'Dials',                   goal:60,  auto:false, fmt:'num'},
-  {id:'connects',    label:'Connects',                goal:6,   auto:false, fmt:'num'},
-  {id:'discovery',   label:'Discovery calls held',    goal:10,  auto:false, fmt:'num'},
-  {id:'quality',     label:'Quality meetings',        goal:6,   auto:false, fmt:'num'},
-  {id:'conviction',  label:'Conviction updates',      goal:4,   auto:true,  fmt:'num'},
-  {id:'newdeals',    label:'New qualified deals',     goal:2,   auto:false, fmt:'num'},
-  {id:'proposals',   label:'Proposals sent',          goal:1,   auto:false, fmt:'num'},
-  {id:'pipeline',    label:'Qualified pipeline ($)',  goal:80000,auto:false, fmt:'money'},
+// ── WEEKLY PULSE ──
+const PULSE_MINIMUMS = [
+  {id:'new_deals',   label:'New deals added',    goal:2},
+  {id:'advanced',    label:'Deals advanced',      goal:3},
+  {id:'qualified',   label:'Deals qualified',     goal:1},
+  {id:'proposals',   label:'Proposals sent',      goal:1},
 ];
 
-let metricsData = {};      // {weekKey: {metricId: {actual, goal}}}
-let metricGoals = {};      // overridden goals {metricId: goal}
-let convictionUpdateCount = 0; // auto-tracked this session
+let pulseData = {};   // {weekKey: {metricId: count, musts: [{text, done}]}}
+
+function getPulseWeekKey(offset){
+  const now=new Date();
+  const day=now.getDay();
+  const diff=now.getDate()-day+(day===0?-6:1)+(offset*7);
+  const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);
+  return`pulse-${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
+}
+
+function getPulseWeekLabel(offset){
+  const now=new Date();
+  const day=now.getDay();
+  const diff=now.getDate()-day+(day===0?-6:1)+(offset*7);
+  const mon=new Date(now);mon.setDate(diff);
+  const fri=new Date(mon);fri.setDate(mon.getDate()+4);
+  return`${MONTHS[mon.getMonth()]} ${mon.getDate()} – ${MONTHS[fri.getMonth()]} ${fri.getDate()}`;
+}
+
+let pulseWeekOffset=0;
 
 async function loadMetrics(){
   try{
-    const rows = await sbGet('metrics','select=*');
-    metricsData = {};
+    const rows=await sbGet('pulse','select=*');
+    pulseData={};
     rows.forEach(r=>{
-      if(!metricsData[r.week_key])metricsData[r.week_key]={};
-      metricsData[r.week_key][r.metric_id]={actual:r.actual, goal:r.goal, rowId:r.id};
+      pulseData[r.week_key]=JSON.parse(r.data||'{}');
+      pulseData[r.week_key]._rowId=r.id;
     });
-    // Load goal overrides
-    const goals = await sbGet('metric_goals','select=*');
-    metricGoals = {};
-    goals.forEach(r=>{metricGoals[r.metric_id]=r.goal;});
   }catch(e){
-    // Tables may not exist yet — use localStorage
-    const d = localStorage.getItem('crm_metrics');
-    if(d)metricsData=JSON.parse(d);
-    const g = localStorage.getItem('crm_metric_goals');
-    if(g)metricGoals=JSON.parse(g);
+    const s=localStorage.getItem('crm_pulse');
+    if(s)pulseData=JSON.parse(s);
   }
 }
 
-function getMetricWeekKey(){
-  // Use current Monday-based week key
-  const now=new Date();
-  const day=now.getDay();
-  const diff=now.getDate()-day+(day===0?-6:1);
-  const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);
-  return`metrics-${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
-}
-
-function getMetricGoal(m){
-  return metricGoals[m.id]!==undefined ? metricGoals[m.id] : m.goal;
-}
-
-function getPctClass(pct){
-  if(pct===null||pct===undefined)return'm-empty';
-  if(pct>=80)return'm-green';
-  if(pct>=50)return'm-yellow';
-  return'm-red';
-}
-
-async function saveMetricActual(weekKey, metricId, actual){
-  const goal = getMetricGoal(METRIC_DEFS.find(m=>m.id===metricId));
-  if(!metricsData[weekKey])metricsData[weekKey]={};
-  const existing = metricsData[weekKey][metricId];
+async function savePulseWeek(weekKey){
+  const data={...pulseData[weekKey]};
+  const rowId=data._rowId;
+  delete data._rowId;
   try{
-    if(existing?.rowId){
-      await sbUpdate('metrics',existing.rowId,{actual,goal,updated_at:new Date().toISOString()});
-      metricsData[weekKey][metricId].actual=actual;
+    if(rowId){
+      await sbUpdate('pulse',rowId,{data:JSON.stringify(data)});
     } else {
-      const rows=await sbInsert('metrics',{week_key:weekKey,metric_id:metricId,actual,goal});
-      metricsData[weekKey][metricId]={actual,goal,rowId:rows[0].id};
+      const rows=await sbInsert('pulse',{week_key:weekKey,data:JSON.stringify(data)});
+      pulseData[weekKey]._rowId=rows[0].id;
     }
   }catch(e){
-    // localStorage fallback
-    if(!metricsData[weekKey])metricsData[weekKey]={};
-    metricsData[weekKey][metricId]={actual,goal};
-    localStorage.setItem('crm_metrics',JSON.stringify(metricsData));
+    localStorage.setItem('crm_pulse',JSON.stringify(pulseData));
   }
 }
 
-async function saveMetricGoal(metricId, goal){
-  metricGoals[metricId]=goal;
-  try{
-    // Try upsert
-    await sbDelete('metric_goals',`metric_id=eq.${metricId}`);
-    await sbInsert('metric_goals',{metric_id:metricId,goal});
-  }catch(e){
-    localStorage.setItem('crm_metric_goals',JSON.stringify(metricGoals));
-  }
+function setPulseCount(weekKey, metricId, val){
+  if(!pulseData[weekKey])pulseData[weekKey]={};
+  pulseData[weekKey][metricId]=Math.max(0,val);
+  savePulseWeek(weekKey);
+  renderMetricsView();
 }
 
-function startEditMetricActual(weekKey, metricId, el){
-  const existing = metricsData[weekKey]?.[metricId];
-  const cur = existing?.actual!==undefined ? existing.actual : '';
-  const m = METRIC_DEFS.find(x=>x.id===metricId);
-  const input=document.createElement('input');
-  input.className='next-move-input';
-  input.value=cur;
-  input.style.width='60px';
-  input.style.textAlign='center';
-  el.replaceWith(input);
-  input.focus();input.select();
-  const finish=async()=>{
-    const raw=input.value.trim().replace(/[$k,]/gi,'');
-    const val = m.fmt==='money' ? parseFloat(raw)*( input.value.includes('k')||input.value.includes('K')?1000:1) : parseFloat(raw);
-    const finalVal = isNaN(val)?null:val;
-    await saveMetricActual(weekKey,metricId,finalVal);
-    renderMetricsView();
-  };
-  input.addEventListener('blur',finish);
-  input.addEventListener('keydown',e=>{
-    if(e.key==='Enter'){e.preventDefault();input.blur();}
-    if(e.key==='Escape'){renderMetricsView();}
-  });
+function toggleMust(weekKey, idx){
+  if(!pulseData[weekKey])pulseData[weekKey]={};
+  if(!pulseData[weekKey].musts)pulseData[weekKey].musts=[];
+  const must=pulseData[weekKey].musts[idx];
+  if(must)must.done=!must.done;
+  savePulseWeek(weekKey);
+  renderMetricsView();
 }
 
-function startEditMetricGoal(metricId, el){
-  const m = METRIC_DEFS.find(x=>x.id===metricId);
-  const cur = getMetricGoal(m);
-  const input=document.createElement('input');
-  input.className='next-move-input';
-  input.value=m.fmt==='money'?cur/1000:cur;
-  input.style.width='50px';
-  input.style.textAlign='center';
-  el.replaceWith(input);
-  input.focus();input.select();
-  const finish=async()=>{
-    const raw=input.value.trim().replace(/[$k,]/gi,'');
-    const val = m.fmt==='money' ? parseFloat(raw)*1000 : parseFloat(raw);
-    if(!isNaN(val)){await saveMetricGoal(metricId,val);}
-    renderMetricsView();
-  };
-  input.addEventListener('blur',finish);
-  input.addEventListener('keydown',e=>{
-    if(e.key==='Enter'){e.preventDefault();input.blur();}
-    if(e.key==='Escape'){renderMetricsView();}
-  });
+function saveMustText(weekKey, idx, text){
+  if(!pulseData[weekKey])pulseData[weekKey]={};
+  if(!pulseData[weekKey].musts)pulseData[weekKey].musts=[];
+  if(!pulseData[weekKey].musts[idx])pulseData[weekKey].musts[idx]={text:'',done:false};
+  pulseData[weekKey].musts[idx].text=text;
+  savePulseWeek(weekKey);
 }
 
-// Auto-track conviction updates (only for existing deals, not new imports)
-let convictionUpdatesThisWeek = {};  // {weekKey: Set of dealIds updated}
-
-async function startEditWeekGoal(weekKey, metricId, el){
-  const m=METRIC_DEFS.find(x=>x.id===metricId);
-  const cur=metricsData[weekKey]?.[metricId+'_goal']?.actual??getMetricGoal(m);
-  const input=document.createElement('input');
-  input.className='next-move-input';
-  input.value=m.fmt==='money'?cur/1000:cur;
-  input.style.width='60px';
-  input.style.textAlign='center';
-  el.replaceWith(input);
-  input.focus();input.select();
-  const finish=async()=>{
-    const raw=input.value.trim().replace(/[$k,]/gi,'');
-    const val=m.fmt==='money'?parseFloat(raw)*1000:parseFloat(raw);
-    if(!isNaN(val)){
-      await saveMetricActual(weekKey,metricId+'_goal',val);
-    }
-    renderMetricsView();
-  };
-  input.addEventListener('blur',finish);
-  input.addEventListener('keydown',e=>{
-    if(e.key==='Enter'){e.preventDefault();input.blur();}
-    if(e.key==='Escape'){renderMetricsView();}
-  });
+function addMust(weekKey){
+  if(!pulseData[weekKey])pulseData[weekKey]={};
+  if(!pulseData[weekKey].musts)pulseData[weekKey].musts=[];
+  if(pulseData[weekKey].musts.length>=4)return;
+  pulseData[weekKey].musts.push({text:'',done:false});
+  savePulseWeek(weekKey);
+  renderMetricsView();
+  // Focus the new input
+  setTimeout(()=>{
+    const inputs=document.querySelectorAll('.must-input');
+    if(inputs.length)inputs[inputs.length-1].focus();
+  },50);
 }
-function trackConvictionUpdate(dealId){
-  const wk=getMetricWeekKey();
-  if(!convictionUpdatesThisWeek[wk])convictionUpdatesThisWeek[wk]=new Set();
-  convictionUpdatesThisWeek[wk].add(dealId);
-  // Auto-save count
-  const count=convictionUpdatesThisWeek[wk].size;
-  saveMetricActual(wk,'conviction',count);
+
+function removeMust(weekKey, idx){
+  if(!pulseData[weekKey]?.musts)return;
+  pulseData[weekKey].musts.splice(idx,1);
+  savePulseWeek(weekKey);
+  renderMetricsView();
 }
 
 function renderMetricsView(){
-  const weeks=[];
-  // 3 past + current + 3 future = offsets -3 to +3
-  for(let i=-3;i<=3;i++){
-    const now=new Date();
-    const day=now.getDay();
-    const diff=now.getDate()-day+(day===0?-6:1)+(i*7);
-    const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);
-    const wk=`metrics-${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
-    const label=`${MONTHS[mon.getMonth()]} ${mon.getDate()}`;
-    const isFuture=i>0;
-    weeks.push({wk,label,isCurrent:i===0,isFuture});
-  }
+  if(currentView!=='metrics')return;
+  const wk=getPulseWeekKey(pulseWeekOffset);
+  const wkData=pulseData[wk]||{};
+  const musts=wkData.musts||[];
+  const isCurrent=pulseWeekOffset===0;
 
-  const headerCells=weeks.map(w=>`<th style="min-width:88px;${w.isCurrent?'color:var(--text);font-weight:600;':w.isFuture?'color:var(--text3);':''}">${w.label}${w.isCurrent?'<br><span style="font-size:9px;font-weight:400;text-transform:none;letter-spacing:0;">this week</span>':''}</th>`).join('');
+  // Week nav
+  const weekNav=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:1.25rem;">
+    <button onclick="pulseWeekOffset--;renderMetricsView()" style="background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);font-family:'DM Sans',sans-serif;">‹</button>
+    <span style="font-size:13px;font-weight:500;">${getPulseWeekLabel(pulseWeekOffset)}${isCurrent?' <span style="font-size:10px;font-weight:400;color:var(--text3);">this week</span>':''}</span>
+    <button onclick="pulseWeekOffset++;renderMetricsView()" style="background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);font-family:'DM Sans',sans-serif;">›</button>
+    <button onclick="pulseWeekOffset=0;renderMetricsView()" style="background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);font-family:'DM Sans',sans-serif;">This week</button>
+  </div>`;
 
-  const fmtVal=(v,fmt)=>{
-    if(v===null||v===undefined)return'';
-    if(fmt==='money')return'$'+(v>=1000?(v/1000).toFixed(0)+'k':v);
-    return v;
-  };
+  // Minimums section
+  const minimumsHtml=PULSE_MINIMUMS.map(m=>{
+    const count=wkData[m.id]||0;
+    const hit=count>=m.goal;
+    const pct=Math.min(Math.round((count/m.goal)*100),100);
+    const barColor=hit?'var(--green)':count>0?'var(--yellow)':'var(--border2)';
+    const textColor=hit?'var(--green-text)':count>0?'var(--yellow-text)':'var(--text3)';
 
-  let rows='';
-  METRIC_DEFS.forEach(m=>{
-    const getWkGoal=wk=>{
-      const g=metricsData[wk]?.[m.id+'_goal'];
-      return g?.actual!==undefined?g.actual:getMetricGoal(m);
-    };
+    return`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;display:flex;align-items:center;gap:16px;">
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:500;margin-bottom:4px;">${m.label}</div>
+        <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;transition:width .3s;"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button onclick="setPulseCount('${wk}','${m.id}',${count-1})" ${!isCurrent||count<=0?'disabled':''}
+          style="width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:transparent;cursor:${isCurrent&&count>0?'pointer':'default'};font-size:16px;line-height:1;color:var(--text2);display:flex;align-items:center;justify-content:center;">−</button>
+        <div style="text-align:center;min-width:48px;">
+          <div style="font-size:20px;font-weight:600;font-family:'DM Mono',monospace;color:${textColor};">${count}</div>
+          <div style="font-size:10px;color:var(--text3);">of ${m.goal}</div>
+        </div>
+        <button onclick="setPulseCount('${wk}','${m.id}',${count+1})" ${!isCurrent?'disabled':''}
+          style="width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:transparent;cursor:${isCurrent?'pointer':'default'};font-size:16px;line-height:1;color:var(--text2);display:flex;align-items:center;justify-content:center;">+</button>
+      </div>
+      <div style="font-size:18px;">${hit?'✓':''}</div>
+    </div>`;
+  }).join('');
 
-    const actualCells=weeks.map(w=>{
-      const entry=metricsData[w.wk]?.[m.id];
-      const actual=entry?.actual;
-      const wGoal=getWkGoal(w.wk);
-      const pct=wGoal>0&&actual!=null?Math.round((actual/wGoal)*100):null;
-      const cls=getPctClass(pct);
-      const display=fmtVal(actual,m.fmt);
-      const bg=w.isCurrent?'background:var(--surface2);':w.isFuture?'background:#FAFAF8;':'';
-      if(m.auto){
-        return`<td style="${bg}text-align:center;">${display?`<span class="${cls}" style="font-size:12px;font-weight:500;font-family:'DM Mono',monospace;">${display}</span>`:`<span style="color:var(--text3);font-size:11px;">${w.isFuture?'·':'auto'}</span>`}</td>`;
-      }
-      return`<td style="${bg}text-align:center;cursor:text;" onclick="startEditMetricActual('${w.wk}','${m.id}',this)">${display?`<span class="${cls}" style="font-size:12px;font-weight:500;font-family:'DM Mono',monospace;">${display}</span>`:`<span style="color:var(--text3);">—</span>`}</td>`;
-    }).join('');
+  // Musts section
+  const mustsHtml=musts.map((must,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <input type="checkbox" class="scenario-cb" ${must.done?'checked':''} ${!isCurrent?'disabled':''} onclick="toggleMust('${wk}',${i})">
+      <input type="text" class="must-input" value="${(must.text||'').replace(/"/g,'&quot;')}"
+        ${!isCurrent?'disabled':''}
+        placeholder="Must do this week..."
+        onchange="saveMustText('${wk}',${i},this.value)"
+        onblur="saveMustText('${wk}',${i},this.value)"
+        style="flex:1;font-family:'DM Sans',sans-serif;font-size:13px;border:none;outline:none;background:transparent;color:${must.done?'var(--text3)':'var(--text)'};text-decoration:${must.done?'line-through':'none'};">
+      ${isCurrent?`<button onclick="removeMust('${wk}',${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;line-height:1;">×</button>`:''}
+    </div>`).join('');
 
-    const goalCells=weeks.map(w=>{
-      const wGoal=getWkGoal(w.wk);
-      const display=fmtVal(wGoal,m.fmt);
-      const bg=w.isCurrent?'background:var(--surface2);':w.isFuture?'background:#FAFAF8;':'';
-      return`<td style="${bg}text-align:center;cursor:text;font-size:11px;color:var(--text2);" onclick="startEditWeekGoal('${w.wk}','${m.id}',this)">${display}</td>`;
-    }).join('');
+  const addMustBtn=isCurrent&&musts.length<4
+    ?`<button onclick="addMust('${wk}')" style="margin-top:8px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;">+ Add must</button>`
+    :'';
 
-    const pctCells=weeks.map(w=>{
-      const entry=metricsData[w.wk]?.[m.id];
-      const actual=entry?.actual;
-      const wGoal=getWkGoal(w.wk);
-      if(actual==null||!wGoal)return`<td style="text-align:center;font-size:11px;color:var(--text3);">—</td>`;
-      const pct=Math.round((actual/wGoal)*100);
-      const col=pct>=80?'var(--green)':pct>=50?'var(--yellow)':'var(--red)';
-      return`<td style="text-align:center;font-size:11px;font-weight:500;color:${col};">${pct}%</td>`;
-    }).join('');
-
-    const autoTag=m.auto?` <span style="font-size:9px;color:var(--text3);font-weight:400;">(auto)</span>`:'';
-    rows+=`
-      <tr style="border-top:2px solid var(--border2);">
-        <td class="metric-name" rowspan="3" style="vertical-align:middle;border-right:1px solid var(--border);">${m.label}${autoTag}</td>
-        <td style="font-size:10px;color:var(--text3);padding:4px 10px;white-space:nowrap;">Actual</td>
-        ${actualCells}
-      </tr>
-      <tr>
-        <td style="font-size:10px;color:var(--text3);padding:4px 10px;white-space:nowrap;">Goal</td>
-        ${goalCells}
-      </tr>
-      <tr>
-        <td style="font-size:10px;color:var(--text3);padding:4px 10px;white-space:nowrap;">% to goal</td>
-        ${pctCells}
-      </tr>`;
-  });
+  // All hit check
+  const allMin=PULSE_MINIMUMS.every(m=>(wkData[m.id]||0)>=m.goal);
+  const allMust=musts.length>0&&musts.every(m=>m.done);
+  const weekStatus=allMin&&allMust
+    ?`<span style="font-size:12px;font-weight:500;color:var(--green-text);background:var(--green-bg);padding:4px 12px;border-radius:20px;">✓ Minimum viable week</span>`
+    :`<span style="font-size:12px;color:var(--text3);">${PULSE_MINIMUMS.filter(m=>(wkData[m.id]||0)>=m.goal).length} of ${PULSE_MINIMUMS.length} minimums hit</span>`;
 
   document.getElementById('main-panel').innerHTML=`
     <div class="panel-header">
-      <div class="panel-title">Metrics</div>
-      <div style="font-size:11px;color:var(--text3);">Click Actual or Goal to edit inline</div>
+      <div class="panel-title">Weekly pulse</div>
+      ${weekStatus}
     </div>
-    <div class="table-wrap">
-      <table class="metrics-table">
-        <thead><tr>
-          <th style="width:150px;text-align:left;">Metric</th>
-          <th style="width:65px;"></th>
-          ${headerCells}
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
+    ${weekNav}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1.25rem;">
+      ${minimumsHtml}
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px;">Musts this week</div>
+      ${mustsHtml||'<div style="font-size:12px;color:var(--text3);padding:4px 0;">No musts added yet.</div>'}
+      ${addMustBtn}
     </div>`;
 }
+
 
 function render(){
   if(currentView==='tier')renderTierView();
