@@ -332,7 +332,26 @@
 
 <script>
 const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const MONTH_COLS=['mar','apr','may','jun'];
+// Dynamic month columns — current month + next 4, then overflow bucket
+function buildMonthCols(){
+  const now=new Date();
+  const startMonth=now.getMonth(); // 0-indexed
+  const cols=[];
+  for(let i=0;i<4;i++){
+    const m=(startMonth+i)%12;
+    cols.push(MONTHS[m].toLowerCase());
+  }
+  return cols;
+}
+function getOverflowLabel(){
+  const now=new Date();
+  const overflowMonth=(now.getMonth()+4)%12; // 5th month onwards
+  const q=Math.floor(overflowMonth/3)+1;
+  const year=now.getFullYear()+(now.getMonth()+4>=12?1:0);
+  return`Q${q} ${year}+`;
+}
+const MONTH_COLS=buildMonthCols();
+const OVERFLOW_LABEL=getOverflowLabel();
 
 // ── SUPABASE CONFIG ──
 const SB_URL='https://pqnnfnhcyurnbohsbgzz.supabase.co';
@@ -541,7 +560,7 @@ async function saveScheduleActivity(dealId,day,weekKey,activity,existingRowId){
 function getCol(dateStr){
   if(!dateStr)return'q3';
   const m=MONTHS[new Date(dateStr).getMonth()].toLowerCase();
-  return MONTH_COLS.includes(m)?m:'q3';
+  return MONTH_COLS.includes(m)?m:'overflow';
 }
 
 function fmtK(v){
@@ -584,7 +603,7 @@ function tableHTML(sorted, groupKey){
       const flagHtml=`<div class="flags">${flags.map(f=>`<div class="flag ${f}"></div>`).join('')}</div>`;
       const isActive=activeDeal&&activeDeal.id===d.id;
       const nm=d.nextMove||'';
-      const cells=MONTH_COLS.concat(['q3']).map(c=>{
+      const cells=MONTH_COLS.concat(['overflow']).map(c=>{
         if(c===col&&d.arr)return`<td class="num"><span class="arr-pill">${fmtK(d.arr)}</span></td>`;
         return`<td class="num"></td>`;
       }).join('');
@@ -610,7 +629,7 @@ function tableHTML(sorted, groupKey){
       </tr>`;
     });
 
-    const subCells=MONTH_COLS.concat(['q3']).map(c=>`<td class="num">${st[c]?fmtK(st[c]):''}</td>`).join('');
+    const subCells=MONTH_COLS.concat(['overflow']).map(c=>`<td class="num">${st[c]?fmtK(st[c]):''}</td>`).join('');
     const subLabel=groupKey===byTier?`Tier ${gk} — ${group.length} deal${group.length!==1?'s':''}`
       :groupKey===byStatus?({g:'On track',y:'Watch',r:'At risk'}[gk]||gk)+` — ${group.length} deal${group.length!==1?'s':''}`
       :`${group.length} deal${group.length!==1?'s':''}`;
@@ -629,7 +648,7 @@ function tableHTML(sorted, groupKey){
   // Recalc grand total cleanly
   const g2={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
   sorted.forEach(d=>{const c=getCol(d.closeDate);if(g2[c]!==undefined)g2[c]+=d.arr||0;g2.arr+=d.arr||0;});
-  const gtCells=MONTH_COLS.concat(['q3']).map(c=>`<td class="num">${g2[c]?fmtK(g2[c]):''}</td>`).join('');
+  const gtCells=MONTH_COLS.concat(['overflow']).map(c=>`<td class="num">${g2[c]?fmtK(g2[c]):''}</td>`).join('');
   html+=`<tr class="total-row">
     <td colspan="4" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;">Grand total</td>
     ${gtCells}
@@ -647,11 +666,8 @@ function tableHTML(sorted, groupKey){
       <th style="width:36px">Tier</th>
       <th style="width:155px">Deal</th>
       <th style="width:85px">Stage</th>
-      <th class="num" style="width:55px">Mar</th>
-      <th class="num" style="width:55px">Apr</th>
-      <th class="num" style="width:55px">May</th>
-      <th class="num" style="width:55px">Jun</th>
-      <th class="num" style="width:55px">Q3+</th>
+      ${MONTH_COLS.map(m=>`<th class="num" style="width:55px">${MONTHS[MONTHS.map(x=>x.toLowerCase()).indexOf(m)]}</th>`).join('')}
+      <th class="num" style="width:55px">${OVERFLOW_LABEL}</th>
       <th class="num" style="width:55px">ARR</th>
       <th style="width:165px">Next move</th>
     </tr></thead>
@@ -1357,7 +1373,7 @@ function renderForecastView(){
     sums.total+=d.arr||0;
   });
 
-  const colLabels={mar:'Mar',apr:'Apr',may:'May',jun:'Jun',q3:'Q3+'};
+  const colLabels=Object.fromEntries([...MONTH_COLS.map(m=>([m,MONTHS[MONTHS.map(x=>x.toLowerCase()).indexOf(m)]])),['overflow',OVERFLOW_LABEL]]);
   const summaryCards=Object.entries(colLabels).map(([k,label])=>`
     <div class="scenario-card${sums[k]?' has-value':''}">
       <div class="scenario-card-label">${label}</div>
@@ -1397,7 +1413,7 @@ function renderForecastView(){
       const isActive=activeDeal&&activeDeal.id===d.id;
       const flags=getFlagDots(d.sentiment);
       const flagHtml=`<div class="flags">${flags.map(f=>`<div class="flag ${f}"></div>`).join('')}</div>`;
-      const cells=MONTH_COLS.concat(['q3']).map(c=>{
+      const cells=MONTH_COLS.concat(['overflow']).map(c=>{
         if(c===col&&d.arr)return`<td class="num"><span class="arr-pill">${fmtK(d.arr)}</span></td>`;
         return`<td class="num"></td>`;
       }).join('');
@@ -1412,7 +1428,7 @@ function renderForecastView(){
       </tr>`;
     });
 
-    const subCells=MONTH_COLS.concat(['q3']).map(c=>`<td class="num">${st[c]?fmtK(st[c]):''}</td>`).join('');
+    const subCells=MONTH_COLS.concat(['overflow']).map(c=>`<td class="num">${st[c]?fmtK(st[c]):''}</td>`).join('');
     rows+=`<tr class="subtotal-row">
       <td></td>
       <td colspan="3">Tier ${tier} — ${group.length} deal${group.length!==1?'s':''}</td>
@@ -1424,7 +1440,7 @@ function renderForecastView(){
   // Grand total
   const g2={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
   sorted.forEach(d=>{const c=getCol(d.closeDate);if(g2[c]!==undefined)g2[c]+=d.arr||0;g2.arr+=d.arr||0;});
-  const gtCells=MONTH_COLS.concat(['q3']).map(c=>`<td class="num">${g2[c]?fmtK(g2[c]):''}</td>`).join('');
+  const gtCells=MONTH_COLS.concat(['overflow']).map(c=>`<td class="num">${g2[c]?fmtK(g2[c]):''}</td>`).join('');
   rows+=`<tr class="total-row">
     <td></td>
     <td colspan="3" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;">Pipeline total</td>
@@ -1480,11 +1496,8 @@ function renderForecastView(){
           <th style="width:36px">Tier</th>
           <th style="width:155px">Deal</th>
           <th style="width:85px">Stage</th>
-          <th class="num" style="width:55px">Mar</th>
-          <th class="num" style="width:55px">Apr</th>
-          <th class="num" style="width:55px">May</th>
-          <th class="num" style="width:55px">Jun</th>
-          <th class="num" style="width:55px">Q3+</th>
+          ${MONTH_COLS.map(m=>`<th class="num" style="width:55px">${MONTHS[MONTHS.map(x=>x.toLowerCase()).indexOf(m)]}</th>`).join('')}
+          <th class="num" style="width:55px">${OVERFLOW_LABEL}</th>
           <th class="num" style="width:55px">ARR</th>
         </tr></thead>
         <tbody>${rows}</tbody>
