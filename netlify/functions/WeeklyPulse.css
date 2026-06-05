@@ -1,0 +1,73 @@
+/* ============================================================================
+   WeeklyPulse.css
+   Theme-able: every color reads a --pulse-* variable with a sensible fallback,
+   so it inherits your app's theme if you define them, and looks clean if not.
+   Override any of these on a parent (e.g. :root or .pulse) to retheme.
+   ============================================================================ */
+.pulse {
+  --pulse-fg:        var(--color-text-primary, #1f1e1c);
+  --pulse-muted:     var(--color-text-secondary, #6b6a64);
+  --pulse-faint:     var(--color-text-tertiary, #9a988f);
+  --pulse-surface:   var(--color-bg-secondary, #f4f3ef);
+  --pulse-card:      var(--color-bg-primary, #ffffff);
+  --pulse-border:    var(--color-border, rgba(0,0,0,0.10));
+  --pulse-ok:        var(--color-success, #1d7a55);
+  --pulse-warn:      var(--color-warning, #b5730f);
+  --pulse-info:      var(--color-info, #1f6fb2);
+  --pulse-radius:    10px;
+
+  color: var(--pulse-fg);
+  font-family: inherit;
+  max-width: 760px;
+}
+
+.pulse-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+.pulse-head h2 { font-size: 18px; font-weight: 500; margin: 0; }
+.pulse-head .pulse-muted { margin-left: auto; font-size: 13px; }
+.pulse-muted { color: var(--pulse-muted); }
+.pulse-section { font-size: 12px; font-weight: 500; color: var(--pulse-faint); margin: 24px 0 10px; }
+.pulse-error { background: var(--pulse-surface); color: var(--pulse-warn); padding: 8px 12px; border-radius: var(--pulse-radius); margin-bottom: 12px; font-size: 13px; }
+
+/* counters */
+.pulse-counters { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+.counter { background: var(--pulse-surface); border-radius: var(--pulse-radius); padding: 12px 14px; }
+.counter-label { font-size: 13px; color: var(--pulse-muted); margin-bottom: 4px; }
+.counter-num { font-size: 24px; font-weight: 500; }
+.counter-num.hit { color: var(--pulse-ok); }
+.counter-target { font-size: 14px; color: var(--pulse-faint); font-weight: 400; margin-left: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; min-height: 22px; }
+.chip { font-size: 12px; background: var(--pulse-card); border: 0.5px solid var(--pulse-border); color: var(--pulse-muted); padding: 2px 8px; border-radius: var(--pulse-radius); cursor: pointer; }
+.chip:hover { border-color: var(--pulse-warn); color: var(--pulse-warn); }
+.tag-add { display: flex; gap: 6px; }
+.tag-add select { flex: 1; height: 30px; font-size: 13px; }
+.tag-add button { height: 30px; width: 34px; }
+
+/* musts */
+.must { border-bottom: 0.5px solid var(--pulse-border); padding: 12px 0; }
+.must:last-child { border-bottom: none; }
+.must.parked { opacity: 0.55; }
+.must-main { display: grid; grid-template-columns: 26px 1fr 1.3fr auto; align-items: center; gap: 10px; }
+.must-check { display: flex; }
+.must-out { font-size: 14px; }
+.must-move { font-size: 14px; color: var(--pulse-muted); }
+.must-move .done { text-decoration: line-through; color: var(--pulse-faint); }
+.needs-move { color: var(--pulse-warn); }
+.must-status { text-align: right; white-space: nowrap; font-size: 13px; }
+.must-status .ok { color: var(--pulse-ok); }
+.must-status .warn { color: var(--pulse-warn); }
+.must-status .muted { color: var(--pulse-faint); }
+.pill-wait { background: color-mix(in srgb, var(--pulse-info) 14%, transparent); color: var(--pulse-info); padding: 3px 10px; border-radius: var(--pulse-radius); }
+
+.panel { margin: 10px 0 2px 36px; padding: 10px 12px; background: var(--pulse-surface); border-radius: var(--pulse-radius); }
+.panel-q { font-size: 13px; color: var(--pulse-muted); margin-bottom: 8px; }
+.panel-or { font-size: 12px; color: var(--pulse-faint); margin: 8px 0 6px; }
+.panel-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.panel-row input[type=text] { flex: 1; min-width: 180px; height: 32px; font-size: 13px; }
+.panel-row input[type=date] { height: 32px; font-size: 13px; }
+
+.linkbtn { background: none; border: none; color: var(--pulse-info); font-size: 16px; cursor: pointer; padding: 0; }
+.add-must { display: flex; gap: 8px; margin-top: 16px; }
+.add-must select { flex: 1; height: 34px; font-size: 13px; }
+
+button { cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: default; }
