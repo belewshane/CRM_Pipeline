@@ -1509,108 +1509,194 @@ function renderForecastView(){
 // ── METRICS ──
 // ── WEEKLY PULSE ──
 const PULSE_MINIMUMS = [
-  {id:'new_deals',   label:'New deals added',    goal:2},
-  {id:'advanced',    label:'Deals advanced',      goal:3},
-  {id:'qualified',   label:'Deals qualified',     goal:1},
-  {id:'proposals',   label:'Proposals sent',      goal:1},
+  {id:'new_deals', label:'New deals added', goal:2},
+  {id:'advanced',  label:'Deals advanced',  goal:3},
+  {id:'qualified', label:'Deals qualified', goal:1},
+  {id:'proposals', label:'Proposals sent',  goal:1},
 ];
 
-let pulseData = {};   // {weekKey: {metricId: count, musts: [{text, done}]}}
+// pulseData[wk] = {counters:{id:[name|'']}, musts:[{name,waitingUntil}], _rowId}
+let pulseData = {};
+let pulseWeekOffset = 0;
+let pulseChoosing = new Set();   // deal names whose must row is mid-advance (transient)
 
 function getPulseWeekKey(offset){
-  const now=new Date();
-  const day=now.getDay();
+  const now=new Date();const day=now.getDay();
   const diff=now.getDate()-day+(day===0?-6:1)+(offset*7);
   const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);
   return`pulse-${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
 }
-
 function getPulseWeekLabel(offset){
-  const now=new Date();
-  const day=now.getDay();
+  const now=new Date();const day=now.getDay();
   const diff=now.getDate()-day+(day===0?-6:1)+(offset*7);
-  const mon=new Date(now);mon.setDate(diff);
-  const fri=new Date(mon);fri.setDate(mon.getDate()+4);
+  const mon=new Date(now);mon.setDate(diff);const fri=new Date(mon);fri.setDate(mon.getDate()+4);
   return`${MONTHS[mon.getMonth()]} ${mon.getDate()} – ${MONTHS[fri.getMonth()]} ${fri.getDate()}`;
 }
-
-let pulseWeekOffset=0;
 
 async function loadMetrics(){
   try{
     const rows=await sbGet('pulse','select=*');
     pulseData={};
-    rows.forEach(r=>{
-      pulseData[r.week_key]=JSON.parse(r.data||'{}');
-      pulseData[r.week_key]._rowId=r.id;
-    });
-  }catch(e){
-    const s=localStorage.getItem('crm_pulse');
-    if(s)pulseData=JSON.parse(s);
-  }
+    rows.forEach(r=>{pulseData[r.week_key]=JSON.parse(r.data||'{}');pulseData[r.week_key]._rowId=r.id;});
+  }catch(e){const s=localStorage.getItem('crm_pulse');if(s)pulseData=JSON.parse(s);}
 }
-
 async function savePulseWeek(weekKey){
-  const data={...pulseData[weekKey]};
-  const rowId=data._rowId;
-  delete data._rowId;
+  const data={...pulseData[weekKey]};const rowId=data._rowId;delete data._rowId;
   try{
-    if(rowId){
-      await sbUpdate('pulse',rowId,{data:JSON.stringify(data)});
-    } else {
-      const rows=await sbInsert('pulse',{week_key:weekKey,data:JSON.stringify(data)});
-      pulseData[weekKey]._rowId=rows[0].id;
-    }
-  }catch(e){
-    localStorage.setItem('crm_pulse',JSON.stringify(pulseData));
-  }
+    if(rowId){await sbUpdate('pulse',rowId,{data:JSON.stringify(data)});}
+    else{const rows=await sbInsert('pulse',{week_key:weekKey,data:JSON.stringify(data)});pulseData[weekKey]._rowId=rows[0].id;}
+  }catch(e){localStorage.setItem('crm_pulse',JSON.stringify(pulseData));}
 }
 
-function setPulseCount(weekKey, metricId, val){
-  if(!pulseData[weekKey])pulseData[weekKey]={};
-  pulseData[weekKey][metricId]=Math.max(0,val);
-  savePulseWeek(weekKey);
-  renderMetricsView();
+// ── counters (migration-aware: legacy numeric -> array of untagged taps) ──
+function ensureCounters(wk){if(!pulseData[wk])pulseData[wk]={};if(!pulseData[wk].counters)pulseData[wk].counters={};return pulseData[wk].counters;}
+function getTags(wk,id){
+  const d=pulseData[wk];if(!d)return[];
+  if(d.counters&&d.counters[id])return d.counters[id];
+  if(typeof d[id]==='number'){const arr=Array(d[id]).fill('');ensureCounters(wk)[id]=arr;return arr;}
+  return ensureCounters(wk)[id]||[];
 }
+function addTag(wk,id,name){const c=ensureCounters(wk);if(!c[id])c[id]=[];c[id].push(name||'');savePulseWeek(wk);renderMetricsView();}
+function addTagFromSelect(wk,id){const sel=document.getElementById('tag-'+id);const v=sel?sel.value:'';if(sel)sel.value='';addTag(wk,id,v);}
+function removeTagAt(wk,id,idx){const c=ensureCounters(wk);if(c[id]){c[id].splice(idx,1);savePulseWeek(wk);renderMetricsView();}}
+function removeLastTag(wk,id){const c=ensureCounters(wk);if(c[id]&&c[id].length){c[id].pop();savePulseWeek(wk);renderMetricsView();}}
 
-function toggleMust(weekKey, idx){
-  if(!pulseData[weekKey])pulseData[weekKey]={};
-  if(!pulseData[weekKey].musts)pulseData[weekKey].musts=[];
-  const must=pulseData[weekKey].musts[idx];
-  if(must)must.done=!must.done;
-  savePulseWeek(weekKey);
-  renderMetricsView();
+// ── musts (point at a deal by name; the move is the deal's live next_move) ──
+function ensureMusts(wk){if(!pulseData[wk])pulseData[wk]={};if(!pulseData[wk].musts)pulseData[wk].musts=[];return pulseData[wk].musts;}
+function addMustDeal(wk,name){if(!name)return;const m=ensureMusts(wk);if(m.some(x=>x.name===name))return;m.push({name});savePulseWeek(wk);renderMetricsView();}
+function removeMustDeal(wk,i){const m=ensureMusts(wk);m.splice(i,1);savePulseWeek(wk);renderMetricsView();}
+function onMustCheck(wk,i){const name=ensureMusts(wk)[i].name;if(pulseChoosing.has(name))pulseChoosing.delete(name);else pulseChoosing.add(name);renderMetricsView();}
+async function advanceMust(wk,i){
+  const m=ensureMusts(wk)[i];const inp=document.getElementById('must-succ-'+i);
+  const successor=inp?inp.value.trim():'';if(!successor)return;
+  const deal=deals.find(d=>d.name===m.name);
+  if(deal){deal.nextMove=successor;if(activeDeal&&activeDeal.id===deal.id)activeDeal=deal;await saveOneDeal(deal);}
+  pulseChoosing.delete(m.name);renderMetricsView();
 }
+function parkMust(wk,i){const m=ensureMusts(wk)[i];const inp=document.getElementById('must-date-'+i);m.waitingUntil=(inp&&inp.value)||null;pulseChoosing.delete(m.name);savePulseWeek(wk);renderMetricsView();}
+function resumeMust(wk,i){const m=ensureMusts(wk)[i];delete m.waitingUntil;pulseChoosing.add(m.name);savePulseWeek(wk);renderMetricsView();}
 
-function saveMustText(weekKey, idx, text){
-  if(!pulseData[weekKey])pulseData[weekKey]={};
-  if(!pulseData[weekKey].musts)pulseData[weekKey].musts=[];
-  if(!pulseData[weekKey].musts[idx])pulseData[weekKey].musts[idx]={text:'',done:false};
-  pulseData[weekKey].musts[idx].text=text;
-  savePulseWeek(weekKey);
+function dealScheduledThisWeek(deal){
+  if(!deal)return false;
+  const swk=getSchedWeekKey(0);const w=schedule[swk]||{};
+  if(w['notouch__'+deal.id])return true;
+  return['Monday','Tuesday','Wednesday','Thursday','Friday'].some(day=>w[deal.id+'__'+day]);
 }
+function fmtMustDate(d){if(!d)return'no date';const dt=new Date(d+'T00:00');return`${MONTHS[dt.getMonth()]} ${dt.getDate()}`;}
 
-function addMust(weekKey){
-  if(!pulseData[weekKey])pulseData[weekKey]={};
-  if(!pulseData[weekKey].musts)pulseData[weekKey].musts=[];
-  if(pulseData[weekKey].musts.length>=4)return;
-  pulseData[weekKey].musts.push({text:'',done:false});
-  savePulseWeek(weekKey);
-  renderMetricsView();
-  // Focus the new input
-  setTimeout(()=>{
-    const inputs=document.querySelectorAll('.must-input');
-    if(inputs.length)inputs[inputs.length-1].focus();
-  },50);
+function renderMetricsView(){
+  if(currentView!=='metrics')return;
+  const wk=getPulseWeekKey(pulseWeekOffset);
+  const wkData=pulseData[wk]||{};
+  const musts=wkData.musts||[];
+  const isCurrent=pulseWeekOffset===0;
+  const esc=s=>(s||'').replace(/"/g,'&quot;');
+  const escT=s=>(s||'').replace(/</g,'&lt;');
+  const dealOpts=deals.map(d=>`<option value="${esc(d.name)}">${escT(d.name)}</option>`).join('');
+
+  const weekNav=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:1.25rem;">
+    <button onclick="pulseWeekOffset--;renderMetricsView()" style="background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);font-family:'DM Sans',sans-serif;">‹</button>
+    <span style="font-size:13px;font-weight:500;">${getPulseWeekLabel(pulseWeekOffset)}${isCurrent?' <span style="font-size:10px;font-weight:400;color:var(--text3);">this week</span>':''}</span>
+    <button onclick="pulseWeekOffset++;renderMetricsView()" style="background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);font-family:'DM Sans',sans-serif;">›</button>
+    <button onclick="pulseWeekOffset=0;renderMetricsView()" style="background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);font-family:'DM Sans',sans-serif;">This week</button>
+  </div>`;
+
+  // ── counters with attribution ──
+  const minimumsHtml=PULSE_MINIMUMS.map(m=>{
+    const tags=getTags(wk,m.id);const count=tags.length;const hit=count>=m.goal;
+    const pct=Math.min(Math.round((count/m.goal)*100),100);
+    const barColor=hit?'var(--green)':count>0?'var(--yellow)':'var(--border2)';
+    const textColor=hit?'var(--green-text)':count>0?'var(--yellow-text)':'var(--text3)';
+    const chips=tags.map((t,idx)=>`<button onclick="removeTagAt('${wk}','${m.id}',${idx})" ${!isCurrent?'disabled':''} title="remove" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:${t?'var(--text2)':'var(--text3)'};padding:2px 8px;border-radius:20px;cursor:${isCurrent?'pointer':'default'};">${t?escT(t):'untagged'}</button>`).join('');
+    return`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:500;margin-bottom:4px;">${m.label}</div>
+          <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;transition:width .3s;"></div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button onclick="removeLastTag('${wk}','${m.id}')" ${!isCurrent||count<=0?'disabled':''} style="width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:transparent;cursor:${isCurrent&&count>0?'pointer':'default'};font-size:16px;line-height:1;color:var(--text2);">−</button>
+          <div style="text-align:center;min-width:48px;"><div style="font-size:20px;font-weight:600;font-family:'DM Mono',monospace;color:${textColor};">${count}</div><div style="font-size:10px;color:var(--text3);">of ${m.goal}</div></div>
+          <button onclick="addTag('${wk}','${m.id}','')" ${!isCurrent?'disabled':''} style="width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:transparent;cursor:${isCurrent?'pointer':'default'};font-size:16px;line-height:1;color:var(--text2);">+</button>
+        </div>
+        <div style="font-size:18px;">${hit?'✓':''}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;min-height:4px;">${chips}</div>
+      ${isCurrent?`<div style="display:flex;gap:6px;margin-top:8px;">
+        <select id="tag-${m.id}" style="flex:1;font-family:'DM Sans',sans-serif;font-size:11px;padding:4px 6px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);"><option value="">tag a deal…</option>${dealOpts}</select>
+        <button onclick="addTagFromSelect('${wk}','${m.id}')" style="font-family:'DM Sans',sans-serif;font-size:11px;padding:4px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text);">+ tag</button>
+      </div>`:''}
+    </div>`;
+  }).join('');
+
+  // ── musts = deals' next moves ──
+  const mustRows=musts.map((must,i)=>{
+    const deal=deals.find(d=>d.name===must.name);
+    const hasMove=!!(deal&&deal.nextMove);
+    const waiting=!!must.waitingUntil;
+    const choosing=pulseChoosing.has(must.name);
+    const scheduled=dealScheduledThisWeek(deal);
+    let status;
+    if(!deal)status=`<span style="color:var(--text3);">not in this snapshot</span>`;
+    else if(waiting)status=`<span style="font-size:11px;background:#E6F1FB;color:#185FA5;padding:3px 9px;border-radius:20px;">waiting · ${fmtMustDate(must.waitingUntil)}</span>`;
+    else if(!hasMove)status=`<span style="color:var(--text3);">—</span>`;
+    else if(scheduled)status=`<span style="color:var(--green-text);">scheduled ✓</span>`;
+    else status=`<span style="color:var(--yellow-text);">no block</span>`;
+    const check=!deal?'<span style="width:16px;display:inline-block;"></span>'
+      :waiting?`<button onclick="resumeMust('${wk}',${i})" title="resume" style="background:none;border:none;cursor:pointer;color:#185FA5;font-size:15px;">↻</button>`
+      :hasMove?`<input type="checkbox" class="scenario-cb" ${choosing?'checked':''} ${!isCurrent?'disabled':''} onclick="onMustCheck('${wk}',${i})">`
+      :'<span style="width:16px;display:inline-block;"></span>';
+    const moveCell=!deal?`<span style="color:var(--text3);">${escT(must.name)}</span>`
+      :hasMove?`<span style="${choosing?'text-decoration:line-through;color:var(--text3);':'color:var(--text2);'}">${escT(deal.nextMove)}</span>`
+      :`<button onclick="onMustCheck('${wk}',${i})" ${!isCurrent?'disabled':''} style="color:var(--yellow-text);background:none;border:1px dashed var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;">needs a next move</button>`;
+    const panel=(choosing&&deal)?`<div style="margin:8px 0 2px 28px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius);border:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Done. What's the next controllable move?</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="must-succ-${i}" placeholder="e.g. book technical review" onkeydown="if(event.key==='Enter')advanceMust('${wk}',${i})" style="flex:1;min-width:180px;font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 9px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);">
+        <button onclick="advanceMust('${wk}',${i})" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 12px;border-radius:var(--radius);border:none;background:var(--text);color:white;cursor:pointer;">Add move</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin:8px 0 6px;">or — nothing in your control right now?</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--text2);">Waiting on buyer · follow up</span>
+        <input type="date" id="must-date-${i}" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);">
+        <button onclick="parkMust('${wk}',${i})" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 12px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text);">Park it</button>
+      </div>
+    </div>`:'';
+    return`<div style="padding:10px 0;border-bottom:1px solid var(--border);${waiting?'opacity:0.55;':''}">
+      <div style="display:grid;grid-template-columns:28px 1fr 1.3fr auto auto;align-items:center;gap:10px;">
+        <span>${check}</span>
+        <span style="font-size:13px;cursor:pointer;" onclick="${deal?`openDeal(${deal.id})`:'void 0'}">${escT(must.name)}</span>
+        <span style="font-size:12px;">${moveCell}</span>
+        <span style="font-size:12px;text-align:right;white-space:nowrap;">${status}</span>
+        ${isCurrent?`<button onclick="removeMustDeal('${wk}',${i})" title="remove must" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;line-height:1;">×</button>`:'<span></span>'}
+      </div>
+      ${panel}
+    </div>`;
+  }).join('');
+
+  const mustNames=new Set(musts.map(x=>x.name));
+  const addOpts=deals.filter(d=>!mustNames.has(d.name)).map(d=>`<option value="${esc(d.name)}">${escT(d.name)}${d.nextMove?'':' (no move set)'}</option>`).join('');
+  const addMustHtml=isCurrent?`<div style="display:flex;gap:8px;margin-top:12px;">
+    <select id="add-must-sel" style="flex:1;font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 9px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);"><option value="">add a must (a deal's next move)…</option>${addOpts}</select>
+    <button onclick="(function(){var s=document.getElementById('add-must-sel');addMustDeal('${wk}',s.value);})()" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text);">Add</button>
+  </div>`:'';
+
+  const minHit=PULSE_MINIMUMS.filter(m=>getTags(wk,m.id).length>=m.goal).length;
+  const allMin=minHit===PULSE_MINIMUMS.length;
+  const weekStatus=allMin
+    ?`<span style="font-size:12px;font-weight:500;color:var(--green-text);background:var(--green-bg);padding:4px 12px;border-radius:20px;">✓ Minimums hit</span>`
+    :`<span style="font-size:12px;color:var(--text3);">${minHit} of ${PULSE_MINIMUMS.length} minimums hit</span>`;
+
+  document.getElementById('main-panel').innerHTML=`
+    <div class="panel-header"><div class="panel-title">Weekly pulse</div>${weekStatus}</div>
+    ${weekNav}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1.25rem;">${minimumsHtml}</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px;">Musts this week — your next moves</div>
+      ${mustRows||'<div style="font-size:12px;color:var(--text3);padding:4px 0;">No musts yet. Add a deal below — its next move becomes the must.</div>'}
+      ${addMustHtml}
+    </div>`;
 }
-
-function removeMust(weekKey, idx){
-  if(!pulseData[weekKey]?.musts)return;
-  pulseData[weekKey].musts.splice(idx,1);
-  savePulseWeek(weekKey);
-  renderMetricsView();
-}
-
 function renderMetricsView(){
   if(currentView!=='metrics')return;
   const wk=getPulseWeekKey(pulseWeekOffset);
