@@ -138,7 +138,8 @@
   .act-chip{display:inline-block;font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;width:100%;text-align:center;cursor:pointer;}
   .chip-meeting{background:var(--green-bg);color:var(--green-text);}
   .chip-called{background:var(--yellow-bg);color:var(--yellow-text);}
-  .chip-emailed{background:#E6F1FB;color:#185FA5;}
+  .chip-emailin{background:#E6F1FB;color:#185FA5;}
+  .chip-emailout{background:#EDE9FB;color:#4A2D8F;}
   .cell-wrap{min-height:28px;display:flex;align-items:center;justify-content:center;}
 
   /* Side panel */
@@ -275,6 +276,18 @@
   .sp-total-item{font-size:11px;color:var(--text2);}
   .sp-total-item span{font-weight:600;font-family:'DM Mono',monospace;color:var(--text);}
   .sp-tier-divider{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:6px 0 2px;border-top:1px solid var(--border);margin-top:4px;}
+
+  /* Checklist */
+  .checklist-item{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);}
+  .checklist-item:last-child{border-bottom:none;}
+  .checklist-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--green);flex-shrink:0;}
+  .checklist-text{flex:1;font-size:12px;background:transparent;border:none;outline:none;font-family:'DM Sans',sans-serif;color:var(--text);resize:none;}
+  .checklist-text.done{text-decoration:line-through;color:var(--text3);}
+  .checklist-text:disabled{cursor:default;}
+  .checklist-del{background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;line-height:1;padding:0;flex-shrink:0;}
+  .checklist-del:hover{color:var(--red);}
+  .checklist-add{width:100%;margin-top:10px;padding:7px;border-radius:var(--radius);border:1px dashed var(--border2);background:transparent;cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text2);transition:all .12s;}
+  .checklist-add:hover{border-color:var(--border2);background:var(--surface2);color:var(--text);}
   ::-webkit-scrollbar{width:6px;}
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
@@ -325,6 +338,7 @@
     <div class="side-tabs">
       <button class="side-tab active" id="stab-conviction" onclick="switchSideTab('conviction')">Conviction</button>
       <button class="side-tab" id="stab-details" onclick="switchSideTab('details')">Details</button>
+      <button class="side-tab" id="stab-checklist" onclick="switchSideTab('checklist')">Checklist</button>
     </div>
     <div class="side-body" id="side-body"></div>
   </div>
@@ -516,6 +530,91 @@ function startEditNextMove(dealId, el){
     if(e.key==='Escape'){input.value=current;input.blur();}
   });
 }
+
+// ── CHECKLISTS ──
+let checklists = {}; // {dealId: [{text, done, id}]}
+
+async function loadChecklist(dealId){
+  const key = String(dealId);
+  if(checklists[key])return; // already cached
+  try{
+    const rows = await sbGet('checklists',`deal_id=eq.${dealId}&order=created_at.asc`);
+    checklists[key] = rows.map(r=>({id:r.id, text:r.text||'', done:r.done||false}));
+  }catch(e){
+    checklists[key]=[];
+  }
+}
+
+async function addChecklistItem(dealId){
+  const key=String(dealId);
+  if(!checklists[key])checklists[key]=[];
+  try{
+    const rows=await sbInsert('checklists',{deal_id:dealId,text:'',done:false});
+    checklists[key].push({id:rows[0].id,text:'',done:false});
+  }catch(e){
+    checklists[key].push({id:Date.now(),text:'',done:false});
+  }
+  renderChecklist();
+  setTimeout(()=>{
+    const inputs=document.querySelectorAll('.checklist-text');
+    if(inputs.length)inputs[inputs.length-1].focus();
+  },50);
+}
+
+async function toggleChecklistItem(dealId, itemId){
+  const key=String(dealId);
+  const item=checklists[key]?.find(x=>x.id===itemId);
+  if(!item)return;
+  item.done=!item.done;
+  try{ await sbUpdate('checklists',itemId,{done:item.done}); }catch(e){}
+  renderChecklist();
+}
+
+async function saveChecklistText(dealId, itemId, text){
+  const key=String(dealId);
+  const item=checklists[key]?.find(x=>x.id===itemId);
+  if(!item)return;
+  item.text=text;
+  try{ await sbUpdate('checklists',itemId,{text}); }catch(e){}
+}
+
+async function deleteChecklistItem(dealId, itemId){
+  const key=String(dealId);
+  if(!checklists[key])return;
+  checklists[key]=checklists[key].filter(x=>x.id!==itemId);
+  try{ await sbDelete('checklists',`id=eq.${itemId}`); }catch(e){}
+  renderChecklist();
+}
+
+function renderChecklist(){
+  if(!activeDeal)return;
+  const dealId=activeDeal.id;
+  const key=String(dealId);
+  const items=checklists[key]||[];
+  const done=items.filter(x=>x.done).length;
+
+  const progress=items.length
+    ?`<div style="font-size:11px;color:var(--text3);margin-bottom:12px;">${done} of ${items.length} complete
+      <div style="height:3px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden;">
+        <div style="height:100%;width:${Math.round((done/items.length)*100)}%;background:var(--green);border-radius:2px;transition:width .3s;"></div>
+      </div></div>`
+    :'';
+
+  const itemsHtml=items.map(item=>`
+    <div class="checklist-item">
+      <input type="checkbox" class="checklist-cb" ${item.done?'checked':''} onclick="toggleChecklistItem(${dealId},${item.id})">
+      <input type="text" class="checklist-text ${item.done?'done':''}" value="${(item.text||'').replace(/"/g,'&quot;')}"
+        placeholder="Add item..."
+        onblur="saveChecklistText(${dealId},${item.id},this.value)"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();addChecklistItem(${dealId});}">
+      <button class="checklist-del" onclick="deleteChecklistItem(${dealId},${item.id})">×</button>
+    </div>`).join('');
+
+  document.getElementById('side-body').innerHTML=`
+    ${progress}
+    <div>${itemsHtml}</div>
+    <button class="checklist-add" onclick="addChecklistItem(${dealId})">+ Add item</button>`;
+}
 async function saveOneDeal(d){
   if(isReadOnly){setStatus('This snapshot is read-only','error');return;}
   try{
@@ -563,14 +662,6 @@ function getCol(dateStr){
   return MONTH_COLS.includes(m)?m:'overflow';
 }
 
-// Accumulator keyed to the LIVE month columns (+ overflow / q3 / total),
-// so month sums always match what getCol() returns. Prevents stale-month bugs.
-function blankCols(){
-  const o={q3:0,arr:0,total:0,overflow:0};
-  MONTH_COLS.forEach(c=>{o[c]=0;});
-  return o;
-}
-
 function fmtK(v){
   if(!v)return'';
   if(v>=1000000)return'$'+(v/1000000).toFixed(1)+'M';
@@ -593,12 +684,12 @@ function tableHTML(sorted, groupKey){
     if(!seen.has(k)){seen.add(k);groups.push(k);}
   });
 
-  const gt=blankCols();
+  const gt={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
   let html='';
 
   groups.forEach(gk=>{
     const group=sorted.filter(d=>groupKey(d)===gk);
-    const st=blankCols();
+    const st={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
 
     group.forEach(d=>{
       const col=getCol(d.closeDate);
@@ -654,7 +745,7 @@ function tableHTML(sorted, groupKey){
   });
 
   // Recalc grand total cleanly
-  const g2=blankCols();
+  const g2={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
   sorted.forEach(d=>{const c=getCol(d.closeDate);if(g2[c]!==undefined)g2[c]+=d.arr||0;g2.arr+=d.arr||0;});
   const gtCells=MONTH_COLS.concat(['overflow']).map(c=>`<td class="num">${g2[c]?fmtK(g2[c]):''}</td>`).join('');
   html+=`<tr class="total-row">
@@ -913,10 +1004,12 @@ function cellInner(dealId,day,val){
       <option value="">—</option>
       <option value="meeting">Meeting</option>
       <option value="called">Called</option>
-      <option value="emailed">Emailed</option>
+      <option value="emailin">Email In</option>
+      <option value="emailout">Email Out</option>
     </select>`;
   }
-  const label=activity.charAt(0).toUpperCase()+activity.slice(1);
+  const labelMap={meeting:'Meeting',called:'Called',emailin:'Email In',emailout:'Email Out'};
+  const label=labelMap[activity]||activity;
   return`<span class="act-chip chip-${activity}" onclick="clearActivity(${dealId},'${day}')" title="Click to clear">${label}</span>`;
 }
 
@@ -1374,7 +1467,7 @@ function renderForecastView(){
   const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
 
   // Calculate sums
-  const sums=blankCols();
+  const sums={mar:0,apr:0,may:0,jun:0,q3:0,total:0};
   deals.filter(d=>scenarioChecked.has(d.id)).forEach(d=>{
     const col=getCol(d.closeDate);
     if(sums[col]!==undefined)sums[col]+=d.arr||0;
@@ -1410,7 +1503,7 @@ function renderForecastView(){
 
   tiers.forEach(tier=>{
     const group=sorted.filter(d=>d.tier===tier);
-    const st=blankCols();
+    const st={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
 
     group.forEach(d=>{
       const col=getCol(d.closeDate);
@@ -1446,7 +1539,7 @@ function renderForecastView(){
   });
 
   // Grand total
-  const g2=blankCols();
+  const g2={mar:0,apr:0,may:0,jun:0,q3:0,arr:0};
   sorted.forEach(d=>{const c=getCol(d.closeDate);if(g2[c]!==undefined)g2[c]+=d.arr||0;g2.arr+=d.arr||0;});
   const gtCells=MONTH_COLS.concat(['overflow']).map(c=>`<td class="num">${g2[c]?fmtK(g2[c]):''}</td>`).join('');
   rows+=`<tr class="total-row">
@@ -1514,82 +1607,110 @@ function renderForecastView(){
 }
 
 
+// ── METRICS ──
 // ── WEEKLY PULSE ──
 const PULSE_MINIMUMS = [
-  {id:'new_deals', label:'New deals added', goal:2},
-  {id:'advanced',  label:'Deals advanced',  goal:3},
-  {id:'qualified', label:'Deals qualified', goal:1},
-  {id:'proposals', label:'Proposals sent',  goal:1},
+  {id:'new_deals',   label:'New deals added',    goal:2},
+  {id:'advanced',    label:'Deals advanced',      goal:3},
+  {id:'qualified',   label:'Deals qualified',     goal:1},
+  {id:'proposals',   label:'Proposals sent',      goal:1},
 ];
 
-// pulseData[wk] = {counters:{id:[name|'']}, musts:[{name,waitingUntil}], _rowId}
-let pulseData = {};
-let pulseWeekOffset = 0;
-let pulseChoosing = new Set();   // deal names whose must row is mid-advance (transient)
+let pulseData = {};   // {weekKey: {metricId: count, musts: [{text, done}]}}
 
 function getPulseWeekKey(offset){
-  const now=new Date();const day=now.getDay();
+  const now=new Date();
+  const day=now.getDay();
   const diff=now.getDate()-day+(day===0?-6:1)+(offset*7);
   const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);
   return`pulse-${mon.getFullYear()}-${mon.getMonth()}-${mon.getDate()}`;
 }
+
 function getPulseWeekLabel(offset){
-  const now=new Date();const day=now.getDay();
+  const now=new Date();
+  const day=now.getDay();
   const diff=now.getDate()-day+(day===0?-6:1)+(offset*7);
-  const mon=new Date(now);mon.setDate(diff);const fri=new Date(mon);fri.setDate(mon.getDate()+4);
+  const mon=new Date(now);mon.setDate(diff);
+  const fri=new Date(mon);fri.setDate(mon.getDate()+4);
   return`${MONTHS[mon.getMonth()]} ${mon.getDate()} – ${MONTHS[fri.getMonth()]} ${fri.getDate()}`;
 }
+
+let pulseWeekOffset=0;
 
 async function loadMetrics(){
   try{
     const rows=await sbGet('pulse','select=*');
     pulseData={};
-    rows.forEach(r=>{pulseData[r.week_key]=JSON.parse(r.data||'{}');pulseData[r.week_key]._rowId=r.id;});
-  }catch(e){const s=localStorage.getItem('crm_pulse');if(s)pulseData=JSON.parse(s);}
+    rows.forEach(r=>{
+      pulseData[r.week_key]=JSON.parse(r.data||'{}');
+      pulseData[r.week_key]._rowId=r.id;
+    });
+  }catch(e){
+    const s=localStorage.getItem('crm_pulse');
+    if(s)pulseData=JSON.parse(s);
+  }
 }
+
 async function savePulseWeek(weekKey){
-  const data={...pulseData[weekKey]};const rowId=data._rowId;delete data._rowId;
+  const data={...pulseData[weekKey]};
+  const rowId=data._rowId;
+  delete data._rowId;
   try{
-    if(rowId){await sbUpdate('pulse',rowId,{data:JSON.stringify(data)});}
-    else{const rows=await sbInsert('pulse',{week_key:weekKey,data:JSON.stringify(data)});pulseData[weekKey]._rowId=rows[0].id;}
-  }catch(e){localStorage.setItem('crm_pulse',JSON.stringify(pulseData));}
+    if(rowId){
+      await sbUpdate('pulse',rowId,{data:JSON.stringify(data)});
+    } else {
+      const rows=await sbInsert('pulse',{week_key:weekKey,data:JSON.stringify(data)});
+      pulseData[weekKey]._rowId=rows[0].id;
+    }
+  }catch(e){
+    localStorage.setItem('crm_pulse',JSON.stringify(pulseData));
+  }
 }
 
-// ── counters (migration-aware: legacy numeric -> array of untagged taps) ──
-function ensureCounters(wk){if(!pulseData[wk])pulseData[wk]={};if(!pulseData[wk].counters)pulseData[wk].counters={};return pulseData[wk].counters;}
-function getTags(wk,id){
-  const d=pulseData[wk];if(!d)return[];
-  if(d.counters&&d.counters[id])return d.counters[id];
-  if(typeof d[id]==='number'){const arr=Array(d[id]).fill('');ensureCounters(wk)[id]=arr;return arr;}
-  return ensureCounters(wk)[id]||[];
+function setPulseCount(weekKey, metricId, val){
+  if(!pulseData[weekKey])pulseData[weekKey]={};
+  pulseData[weekKey][metricId]=Math.max(0,val);
+  savePulseWeek(weekKey);
+  renderMetricsView();
 }
-function addTag(wk,id,name){const c=ensureCounters(wk);if(!c[id])c[id]=[];c[id].push(name||'');savePulseWeek(wk);renderMetricsView();}
-function addTagFromSelect(wk,id){const sel=document.getElementById('tag-'+id);const v=sel?sel.value:'';if(sel)sel.value='';addTag(wk,id,v);}
-function removeTagAt(wk,id,idx){const c=ensureCounters(wk);if(c[id]){c[id].splice(idx,1);savePulseWeek(wk);renderMetricsView();}}
-function removeLastTag(wk,id){const c=ensureCounters(wk);if(c[id]&&c[id].length){c[id].pop();savePulseWeek(wk);renderMetricsView();}}
 
-// ── musts (point at a deal by name; the move is the deal's live next_move) ──
-function ensureMusts(wk){if(!pulseData[wk])pulseData[wk]={};if(!pulseData[wk].musts)pulseData[wk].musts=[];return pulseData[wk].musts;}
-function addMustDeal(wk,name){if(!name)return;const m=ensureMusts(wk);if(m.some(x=>x.name===name))return;m.push({name});savePulseWeek(wk);renderMetricsView();}
-function removeMustDeal(wk,i){const m=ensureMusts(wk);m.splice(i,1);savePulseWeek(wk);renderMetricsView();}
-function onMustCheck(wk,i){const name=ensureMusts(wk)[i].name;if(pulseChoosing.has(name))pulseChoosing.delete(name);else pulseChoosing.add(name);renderMetricsView();}
-async function advanceMust(wk,i){
-  const m=ensureMusts(wk)[i];const inp=document.getElementById('must-succ-'+i);
-  const successor=inp?inp.value.trim():'';if(!successor)return;
-  const deal=deals.find(d=>d.name===m.name);
-  if(deal){deal.nextMove=successor;if(activeDeal&&activeDeal.id===deal.id)activeDeal=deal;await saveOneDeal(deal);}
-  pulseChoosing.delete(m.name);renderMetricsView();
+function toggleMust(weekKey, idx){
+  if(!pulseData[weekKey])pulseData[weekKey]={};
+  if(!pulseData[weekKey].musts)pulseData[weekKey].musts=[];
+  const must=pulseData[weekKey].musts[idx];
+  if(must)must.done=!must.done;
+  savePulseWeek(weekKey);
+  renderMetricsView();
 }
-function parkMust(wk,i){const m=ensureMusts(wk)[i];const inp=document.getElementById('must-date-'+i);m.waitingUntil=(inp&&inp.value)||null;pulseChoosing.delete(m.name);savePulseWeek(wk);renderMetricsView();}
-function resumeMust(wk,i){const m=ensureMusts(wk)[i];delete m.waitingUntil;pulseChoosing.add(m.name);savePulseWeek(wk);renderMetricsView();}
 
-function dealScheduledThisWeek(deal){
-  if(!deal)return false;
-  const swk=getSchedWeekKey(0);const w=schedule[swk]||{};
-  if(w['notouch__'+deal.id])return true;
-  return['Monday','Tuesday','Wednesday','Thursday','Friday'].some(day=>w[deal.id+'__'+day]);
+function saveMustText(weekKey, idx, text){
+  if(!pulseData[weekKey])pulseData[weekKey]={};
+  if(!pulseData[weekKey].musts)pulseData[weekKey].musts=[];
+  if(!pulseData[weekKey].musts[idx])pulseData[weekKey].musts[idx]={text:'',done:false};
+  pulseData[weekKey].musts[idx].text=text;
+  savePulseWeek(weekKey);
 }
-function fmtMustDate(d){if(!d)return'no date';const dt=new Date(d+'T00:00');return`${MONTHS[dt.getMonth()]} ${dt.getDate()}`;}
+
+function addMust(weekKey){
+  if(!pulseData[weekKey])pulseData[weekKey]={};
+  if(!pulseData[weekKey].musts)pulseData[weekKey].musts=[];
+  if(pulseData[weekKey].musts.length>=4)return;
+  pulseData[weekKey].musts.push({text:'',done:false});
+  savePulseWeek(weekKey);
+  renderMetricsView();
+  // Focus the new input
+  setTimeout(()=>{
+    const inputs=document.querySelectorAll('.must-input');
+    if(inputs.length)inputs[inputs.length-1].focus();
+  },50);
+}
+
+function removeMust(weekKey, idx){
+  if(!pulseData[weekKey]?.musts)return;
+  pulseData[weekKey].musts.splice(idx,1);
+  savePulseWeek(weekKey);
+  renderMetricsView();
+}
 
 function renderMetricsView(){
   if(currentView!=='metrics')return;
@@ -1597,10 +1718,8 @@ function renderMetricsView(){
   const wkData=pulseData[wk]||{};
   const musts=wkData.musts||[];
   const isCurrent=pulseWeekOffset===0;
-  const esc=s=>(s||'').replace(/"/g,'&quot;');
-  const escT=s=>(s||'').replace(/</g,'&lt;');
-  const dealOpts=deals.map(d=>`<option value="${esc(d.name)}">${escT(d.name)}</option>`).join('');
 
+  // Week nav
   const weekNav=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:1.25rem;">
     <button onclick="pulseWeekOffset--;renderMetricsView()" style="background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);font-family:'DM Sans',sans-serif;">‹</button>
     <span style="font-size:13px;font-weight:500;">${getPulseWeekLabel(pulseWeekOffset)}${isCurrent?' <span style="font-size:10px;font-weight:400;color:var(--text3);">this week</span>':''}</span>
@@ -1608,100 +1727,72 @@ function renderMetricsView(){
     <button onclick="pulseWeekOffset=0;renderMetricsView()" style="background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);font-family:'DM Sans',sans-serif;">This week</button>
   </div>`;
 
-  // ── counters with attribution ──
+  // Minimums section
   const minimumsHtml=PULSE_MINIMUMS.map(m=>{
-    const tags=getTags(wk,m.id);const count=tags.length;const hit=count>=m.goal;
+    const count=wkData[m.id]||0;
+    const hit=count>=m.goal;
     const pct=Math.min(Math.round((count/m.goal)*100),100);
     const barColor=hit?'var(--green)':count>0?'var(--yellow)':'var(--border2)';
     const textColor=hit?'var(--green-text)':count>0?'var(--yellow-text)':'var(--text3)';
-    const chips=tags.map((t,idx)=>`<button onclick="removeTagAt('${wk}','${m.id}',${idx})" ${!isCurrent?'disabled':''} title="remove" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:${t?'var(--text2)':'var(--text3)'};padding:2px 8px;border-radius:20px;cursor:${isCurrent?'pointer':'default'};">${t?escT(t):'untagged'}</button>`).join('');
-    return`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;">
-      <div style="display:flex;align-items:center;gap:16px;">
-        <div style="flex:1;">
-          <div style="font-size:13px;font-weight:500;margin-bottom:4px;">${m.label}</div>
-          <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;transition:width .3s;"></div></div>
+
+    return`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;display:flex;align-items:center;gap:16px;">
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:500;margin-bottom:4px;">${m.label}</div>
+        <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;transition:width .3s;"></div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <button onclick="removeLastTag('${wk}','${m.id}')" ${!isCurrent||count<=0?'disabled':''} style="width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:transparent;cursor:${isCurrent&&count>0?'pointer':'default'};font-size:16px;line-height:1;color:var(--text2);">−</button>
-          <div style="text-align:center;min-width:48px;"><div style="font-size:20px;font-weight:600;font-family:'DM Mono',monospace;color:${textColor};">${count}</div><div style="font-size:10px;color:var(--text3);">of ${m.goal}</div></div>
-          <button onclick="addTag('${wk}','${m.id}','')" ${!isCurrent?'disabled':''} style="width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:transparent;cursor:${isCurrent?'pointer':'default'};font-size:16px;line-height:1;color:var(--text2);">+</button>
-        </div>
-        <div style="font-size:18px;">${hit?'✓':''}</div>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;min-height:4px;">${chips}</div>
-      ${isCurrent?`<div style="display:flex;gap:6px;margin-top:8px;">
-        <select id="tag-${m.id}" style="flex:1;font-family:'DM Sans',sans-serif;font-size:11px;padding:4px 6px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);"><option value="">tag a deal…</option>${dealOpts}</select>
-        <button onclick="addTagFromSelect('${wk}','${m.id}')" style="font-family:'DM Sans',sans-serif;font-size:11px;padding:4px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text);">+ tag</button>
-      </div>`:''}
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button onclick="setPulseCount('${wk}','${m.id}',${count-1})" ${!isCurrent||count<=0?'disabled':''}
+          style="width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:transparent;cursor:${isCurrent&&count>0?'pointer':'default'};font-size:16px;line-height:1;color:var(--text2);display:flex;align-items:center;justify-content:center;">−</button>
+        <div style="text-align:center;min-width:48px;">
+          <div style="font-size:20px;font-weight:600;font-family:'DM Mono',monospace;color:${textColor};">${count}</div>
+          <div style="font-size:10px;color:var(--text3);">of ${m.goal}</div>
+        </div>
+        <button onclick="setPulseCount('${wk}','${m.id}',${count+1})" ${!isCurrent?'disabled':''}
+          style="width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:transparent;cursor:${isCurrent?'pointer':'default'};font-size:16px;line-height:1;color:var(--text2);display:flex;align-items:center;justify-content:center;">+</button>
+      </div>
+      <div style="font-size:18px;">${hit?'✓':''}</div>
     </div>`;
   }).join('');
 
-  // ── musts = deals' next moves ──
-  const mustRows=musts.map((must,i)=>{
-    const deal=deals.find(d=>d.name===must.name);
-    const hasMove=!!(deal&&deal.nextMove);
-    const waiting=!!must.waitingUntil;
-    const choosing=pulseChoosing.has(must.name);
-    const scheduled=dealScheduledThisWeek(deal);
-    let status;
-    if(!deal)status=`<span style="color:var(--text3);">not in this snapshot</span>`;
-    else if(waiting)status=`<span style="font-size:11px;background:#E6F1FB;color:#185FA5;padding:3px 9px;border-radius:20px;">waiting · ${fmtMustDate(must.waitingUntil)}</span>`;
-    else if(!hasMove)status=`<span style="color:var(--text3);">—</span>`;
-    else if(scheduled)status=`<span style="color:var(--green-text);">scheduled ✓</span>`;
-    else status=`<span style="color:var(--yellow-text);">no block</span>`;
-    const check=!deal?'<span style="width:16px;display:inline-block;"></span>'
-      :waiting?`<button onclick="resumeMust('${wk}',${i})" title="resume" style="background:none;border:none;cursor:pointer;color:#185FA5;font-size:15px;">↻</button>`
-      :hasMove?`<input type="checkbox" class="scenario-cb" ${choosing?'checked':''} ${!isCurrent?'disabled':''} onclick="onMustCheck('${wk}',${i})">`
-      :'<span style="width:16px;display:inline-block;"></span>';
-    const moveCell=!deal?`<span style="color:var(--text3);">${escT(must.name)}</span>`
-      :hasMove?`<span style="${choosing?'text-decoration:line-through;color:var(--text3);':'color:var(--text2);'}">${escT(deal.nextMove)}</span>`
-      :`<button onclick="onMustCheck('${wk}',${i})" ${!isCurrent?'disabled':''} style="color:var(--yellow-text);background:none;border:1px dashed var(--border2);border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;">needs a next move</button>`;
-    const panel=(choosing&&deal)?`<div style="margin:8px 0 2px 28px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius);border:1px solid var(--border);">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Done. What's the next controllable move?</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <input type="text" id="must-succ-${i}" placeholder="e.g. book technical review" onkeydown="if(event.key==='Enter')advanceMust('${wk}',${i})" style="flex:1;min-width:180px;font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 9px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);">
-        <button onclick="advanceMust('${wk}',${i})" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 12px;border-radius:var(--radius);border:none;background:var(--text);color:white;cursor:pointer;">Add move</button>
-      </div>
-      <div style="font-size:11px;color:var(--text3);margin:8px 0 6px;">or — nothing in your control right now?</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <span style="font-size:12px;color:var(--text2);">Waiting on buyer · follow up</span>
-        <input type="date" id="must-date-${i}" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);">
-        <button onclick="parkMust('${wk}',${i})" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 12px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text);">Park it</button>
-      </div>
-    </div>`:'';
-    return`<div style="padding:10px 0;border-bottom:1px solid var(--border);${waiting?'opacity:0.55;':''}">
-      <div style="display:grid;grid-template-columns:28px 1fr 1.3fr auto auto;align-items:center;gap:10px;">
-        <span>${check}</span>
-        <span style="font-size:13px;cursor:pointer;" onclick="${deal?`openDeal(${deal.id})`:'void 0'}">${escT(must.name)}</span>
-        <span style="font-size:12px;">${moveCell}</span>
-        <span style="font-size:12px;text-align:right;white-space:nowrap;">${status}</span>
-        ${isCurrent?`<button onclick="removeMustDeal('${wk}',${i})" title="remove must" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;line-height:1;">×</button>`:'<span></span>'}
-      </div>
-      ${panel}
-    </div>`;
-  }).join('');
+  // Musts section
+  const mustsHtml=musts.map((must,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <input type="checkbox" class="scenario-cb" ${must.done?'checked':''} ${!isCurrent?'disabled':''} onclick="toggleMust('${wk}',${i})">
+      <input type="text" class="must-input" value="${(must.text||'').replace(/"/g,'&quot;')}"
+        ${!isCurrent?'disabled':''}
+        placeholder="Must do this week..."
+        onchange="saveMustText('${wk}',${i},this.value)"
+        onblur="saveMustText('${wk}',${i},this.value)"
+        style="flex:1;font-family:'DM Sans',sans-serif;font-size:13px;border:none;outline:none;background:transparent;color:${must.done?'var(--text3)':'var(--text)'};text-decoration:${must.done?'line-through':'none'};">
+      ${isCurrent?`<button onclick="removeMust('${wk}',${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;line-height:1;">×</button>`:''}
+    </div>`).join('');
 
-  const mustNames=new Set(musts.map(x=>x.name));
-  const addOpts=deals.filter(d=>!mustNames.has(d.name)).map(d=>`<option value="${esc(d.name)}">${escT(d.name)}${d.nextMove?'':' (no move set)'}</option>`).join('');
-  const addMustHtml=isCurrent?`<div style="display:flex;gap:8px;margin-top:12px;">
-    <select id="add-must-sel" style="flex:1;font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 9px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);"><option value="">add a must (a deal's next move)…</option>${addOpts}</select>
-    <button onclick="(function(){var s=document.getElementById('add-must-sel');addMustDeal('${wk}',s.value);})()" style="font-family:'DM Sans',sans-serif;font-size:12px;padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text);">Add</button>
-  </div>`:'';
+  const addMustBtn=isCurrent&&musts.length<4
+    ?`<button onclick="addMust('${wk}')" style="margin-top:8px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;">+ Add must</button>`
+    :'';
 
-  const minHit=PULSE_MINIMUMS.filter(m=>getTags(wk,m.id).length>=m.goal).length;
-  const allMin=minHit===PULSE_MINIMUMS.length;
-  const weekStatus=allMin
-    ?`<span style="font-size:12px;font-weight:500;color:var(--green-text);background:var(--green-bg);padding:4px 12px;border-radius:20px;">✓ Minimums hit</span>`
-    :`<span style="font-size:12px;color:var(--text3);">${minHit} of ${PULSE_MINIMUMS.length} minimums hit</span>`;
+  // All hit check
+  const allMin=PULSE_MINIMUMS.every(m=>(wkData[m.id]||0)>=m.goal);
+  const allMust=musts.length>0&&musts.every(m=>m.done);
+  const weekStatus=allMin&&allMust
+    ?`<span style="font-size:12px;font-weight:500;color:var(--green-text);background:var(--green-bg);padding:4px 12px;border-radius:20px;">✓ Minimum viable week</span>`
+    :`<span style="font-size:12px;color:var(--text3);">${PULSE_MINIMUMS.filter(m=>(wkData[m.id]||0)>=m.goal).length} of ${PULSE_MINIMUMS.length} minimums hit</span>`;
 
   document.getElementById('main-panel').innerHTML=`
-    <div class="panel-header"><div class="panel-title">Weekly pulse</div>${weekStatus}</div>
+    <div class="panel-header">
+      <div class="panel-title">Weekly pulse</div>
+      ${weekStatus}
+    </div>
     ${weekNav}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1.25rem;">${minimumsHtml}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1.25rem;">
+      ${minimumsHtml}
+    </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px;">Musts this week — your next moves</div>
-      ${mustRows||'<div style="font-size:12px;color:var(--text3);padding:4px 0;">No musts yet. Add a deal below — its next move becomes the must.</div>'}
-      ${addMustHtml}
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px;">Musts this week</div>
+      ${mustsHtml||'<div style="font-size:12px;color:var(--text3);padding:4px 0;">No musts added yet.</div>'}
+      ${addMustBtn}
     </div>`;
 }
 
@@ -1769,9 +1860,11 @@ async function openDeal(id){
   sideTab='conviction';
   document.getElementById('stab-conviction').classList.add('active');
   document.getElementById('stab-details').classList.remove('active');
-  // Load history from DB if not cached
+  document.getElementById('stab-checklist').classList.remove('active');
+  // Load history and checklist from DB if not cached
   const dk=String(activeDeal.id);
   if(!dealHistories[dk])await loadDealHistory(activeDeal.id);
+  await loadChecklist(activeDeal.id);
   renderSide();
   if(currentView!=='schedule')render();
 }
@@ -1786,12 +1879,15 @@ function switchSideTab(tab){
   sideTab=tab;
   document.getElementById('stab-conviction').classList.toggle('active',tab==='conviction');
   document.getElementById('stab-details').classList.toggle('active',tab==='details');
+  document.getElementById('stab-checklist').classList.toggle('active',tab==='checklist');
   renderSide();
 }
 
 function renderSide(){
   if(!activeDeal)return;
-  sideTab==='conviction'?renderConviction():renderDetails();
+  if(sideTab==='conviction')renderConviction();
+  else if(sideTab==='details')renderDetails();
+  else if(sideTab==='checklist')renderChecklist();
 }
 
 async function setTier(val){
