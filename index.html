@@ -1466,8 +1466,8 @@ function renderForecastView(){
   if(!deals.length){document.getElementById('main-panel').innerHTML=emptyState();return;}
   const sorted=[...deals].sort((a,b)=>a.tier-b.tier||b.arr-a.arr);
 
-  // Calculate sums
-  const sums={mar:0,apr:0,may:0,jun:0,q3:0,total:0};
+  // Calculate sums using dynamic month cols
+  const sums=Object.fromEntries([...MONTH_COLS.map(m=>[m,0]),['overflow',0],['total',0]]);
   deals.filter(d=>scenarioChecked.has(d.id)).forEach(d=>{
     const col=getCol(d.closeDate);
     if(sums[col]!==undefined)sums[col]+=d.arr||0;
