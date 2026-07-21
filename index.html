@@ -459,6 +459,7 @@ async function switchSnapshot(id){
   activeDeal=null;
   document.getElementById('sidepanel').style.display='none';
   await loadDeals();
+  await loadSchedule();
   render();
   renderQuotaBar();
   renderSnapshotSelector();
@@ -484,7 +485,11 @@ function getWeekLabel(date){
 
 async function loadSchedule(){
   try{
-    const rows=await sbGet('schedule','select=*');
+    // Only load schedule entries for deals in the current snapshot
+    const dealIds=deals.map(d=>d.id).join(',');
+    const rows=dealIds
+      ? await sbGet('schedule',`select=*&deal_id=in.(${dealIds})`)
+      : [];
     schedule={};
     rows.forEach(r=>{
       if(!schedule[r.week_key])schedule[r.week_key]={};
