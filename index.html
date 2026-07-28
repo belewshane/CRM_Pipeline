@@ -1209,6 +1209,7 @@ let spBuckets=[
   {id:'b1', type:1, deals:[]}, // type = 1 (need one of) or 2 (need two of)
   {id:'b2', type:1, deals:[]},
   {id:'b3', type:1, deals:[]},
+  {id:'b4', type:1, deals:[]},
 ];
 let spDragDealId=null;
 let activeScenario=null; // 'Best case' | 'Upside' | 'Stretch' | null
@@ -1329,8 +1330,8 @@ function spDrop(e, bucketId){
   spDragDealId=null;
 }
 
-const BUCKET_COLORS={b1:'#378ADD',b2:'#BA7517',b3:'#993556'};
-const BUCKET_NAMES={b1:'Bucket 1',b2:'Bucket 2',b3:'Bucket 3'};
+const BUCKET_COLORS={b1:'#378ADD',b2:'#BA7517',b3:'#993556',b4:'#2A8A5E'};
+const BUCKET_NAMES={b1:'Bucket 1',b2:'Bucket 2',b3:'Bucket 3',b4:'Bucket 4'};
 
 
 async function saveScenarioPlanning(){
