@@ -485,15 +485,16 @@ function getWeekLabel(date){
 
 async function loadSchedule(){
   try{
-    // Only load schedule entries for deals in the current snapshot
-    const dealIds=deals.map(d=>d.id).join(',');
-    const rows=dealIds
-      ? await sbGet('schedule',`select=*&deal_id=in.(${dealIds})`)
-      : [];
+    const rows=await sbGet('schedule','select=*');
     schedule={};
     rows.forEach(r=>{
       if(!schedule[r.week_key])schedule[r.week_key]={};
-      schedule[r.week_key][`${r.deal_id}__${r.day}`]={activity:r.activity,rowId:r.id};
+      // Map deal_name back to current snapshot's deal id for in-memory key
+      const dealName=r.deal_name||'';
+      const deal=deals.find(d=>d.name===dealName);
+      const dealId=deal?deal.id:r.deal_id;
+      const key=r.day==='notouch'?`notouch__${dealId}`:`${dealId}__${r.day}`;
+      schedule[r.week_key][key]={activity:r.activity,rowId:r.id,dealName};
     });
   }catch(e){console.warn('Schedule load error',e);}
 }
@@ -647,6 +648,7 @@ function getSampleDeals(){
 }
 
 async function saveScheduleActivity(dealId,day,weekKey,activity,existingRowId){
+  const dealName=deals.find(d=>d.id===dealId)?.name||'';
   try{
     if(existingRowId){
       if(activity){
@@ -655,7 +657,7 @@ async function saveScheduleActivity(dealId,day,weekKey,activity,existingRowId){
         await sbDelete('schedule',`id=eq.${existingRowId}`);
       }
     } else if(activity){
-      const rows=await sbInsert('schedule',{week_key:weekKey,deal_id:dealId,day,activity});
+      const rows=await sbInsert('schedule',{week_key:weekKey,deal_id:dealId,deal_name:dealName,day,activity});
       return rows[0]?.id;
     }
   }catch(e){console.warn('Schedule save error',e);}
