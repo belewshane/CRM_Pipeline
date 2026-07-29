@@ -1348,20 +1348,27 @@ async function saveScenarioPlanning(){
 }
 
 async function loadScenarioPlanning(){
+  const DEFAULT_BUCKETS=['b1','b2','b3','b4'];
   try{
     const rows=await sbGet('scenarios','select=*&name=eq.sp_planning');
     if(rows.length){
       const data=JSON.parse(rows[0].deal_ids||'{}');
-      if(data.buckets)spBuckets=data.buckets;
+      if(data.buckets){
+        // Merge: keep saved bucket data but ensure all 4 buckets exist
+        const savedMap=Object.fromEntries(data.buckets.map(b=>[b.id,b]));
+        spBuckets=DEFAULT_BUCKETS.map(id=>savedMap[id]||{id,type:1,deals:[]});
+      }
       if(data.target)setTimeout(()=>{const inp=document.getElementById('sp-target');if(inp)inp.value=data.target;},100);
       return;
     }
   }catch(e){}
-  // localStorage fallback
   const s=localStorage.getItem('crm_sp_planning');
   if(s){
     const data=JSON.parse(s);
-    if(data.buckets)spBuckets=data.buckets;
+    if(data.buckets){
+      const savedMap=Object.fromEntries(data.buckets.map(b=>[b.id,b]));
+      spBuckets=DEFAULT_BUCKETS.map(id=>savedMap[id]||{id,type:1,deals:[]});
+    }
     if(data.target)setTimeout(()=>{const inp=document.getElementById('sp-target');if(inp)inp.value=data.target;},100);
   }
 }
