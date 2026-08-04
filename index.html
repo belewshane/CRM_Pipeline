@@ -2001,6 +2001,7 @@ function renderDetails(){
   const d=activeDeal;
   const tierOpts=[1,2,3,4].map(v=>`<option value="${v}" ${d.tier===v?'selected':''}>Tier ${v}</option>`).join('');
   document.getElementById('side-body').innerHTML=`
+    <div class="field-row"><div class="field-lbl">Deal name</div><input type="text" value="${(d.name||'').replace(/"/g,'&quot;')}" onchange="updateField('name',this.value);document.getElementById('side-name').textContent=this.value;render()"></div>
     <div class="field-row"><div class="field-lbl">Tier</div><select onchange="updateField('tier',parseInt(this.value));render()">${tierOpts}</select></div>
     <div class="field-row"><div class="field-lbl">NSTW</div><input type="text" value="${(d.nstw||'').replace(/"/g,'&quot;')}" onchange="updateField('nstw',this.value)"></div>
     <div class="field-row"><div class="field-lbl">Deal stage</div><input type="text" value="${(d.stage||'').replace(/"/g,'&quot;')}" onchange="updateField('stage',this.value)"></div>
