@@ -899,6 +899,27 @@ function renderGridView(){
     html+='</div>';
   });
 
+  // Unclassified deals — missing tier or sentiment
+  const unclassified=deals.filter(d=>!d.tier||!d.sentiment);
+  if(unclassified.length){
+    const unCards=unclassified.map(d=>`<div class="deal-card${activeDeal&&activeDeal.id===d.id?' active-card':''}"
+        draggable="true"
+        ondragstart="dragStart(event,${d.id})"
+        ondragend="dragEnd(event)"
+        onclick="openDeal(${d.id})"
+        title="${d.name} · ${fmtK(d.arr)} — drag to classify">
+        <div class="dc-name">${d.name}</div>
+        <div style="font-size:9px;color:var(--text3);margin-top:2px;">${fmtK(d.arr)}</div>
+      </div>`).join('');
+
+    html+=`<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px;">
+        Unclassified — ${unclassified.length} deal${unclassified.length!==1?'s':''} · drag to place
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">${unCards}</div>
+    </div>`;
+  }
+
   const totalArr=deals.reduce((s,d)=>s+(d.arr||0),0);
   document.getElementById('main-panel').innerHTML=`
     <div class="panel-header">
@@ -1968,7 +1989,7 @@ function renderConviction(){
     </div>
     <div class="field-row">
       <div class="field-lbl">Next move override</div>
-      <input type="text" id="f-nextmove" value="${(d.nextMove||p.move).replace(/"/g,'&quot;')}" onchange="updateField('nextMove',this.value);render()">
+      <input type="text" id="f-nextmove" value="${(d.nextMove||'').replace(/"/g,'&quot;')}" onchange="updateField('nextMove',this.value);render()">
     </div>
     <div class="field-row">
       <div class="field-lbl">Notes / context</div>
@@ -2032,8 +2053,6 @@ async function setState(dimIdx,state){
   const d=deals.find(x=>x.id===activeDeal.id);
   if(d){d[keys[dimIdx]]=state;activeDeal=d;}
   await saveOneDeal(activeDeal);
-  // Only track conviction updates for existing deals (not fresh imports)
-  if(d&&d.id&&dbLoaded)trackConvictionUpdate(d.id);
   renderConviction();
 }
 
