@@ -1299,10 +1299,11 @@ function toggleScenario(id){
 function spGetBucketContrib(bucket){
   const n = bucket.type;
   if(!bucket.deals.length) return 0;
+  // deals stored as names — resolve to current snapshot
   const sorted = [...bucket.deals]
-    .map(id => deals.find(d=>d.id===id))
+    .map(name => deals.find(d=>d.name===name))
     .filter(Boolean)
-    .sort((a,b)=>(a.arr||0)-(b.arr||0)); // ascending — take lowest n
+    .sort((a,b)=>(a.arr||0)-(b.arr||0));
   return sorted.slice(0,n).reduce((s,d)=>s+(d.arr||0),0);
 }
 
@@ -1318,7 +1319,9 @@ function spDefaultTarget(){
 }
 
 function spGetBucketInId(dealId){
-  return spBuckets.find(b=>b.deals.includes(dealId))?.id||null;
+  const name=deals.find(d=>d.id===dealId)?.name;
+  if(!name)return null;
+  return spBuckets.find(b=>b.deals.includes(name))?.id||null;
 }
 
 function spToggleBucketType(bucketId, type){
@@ -1326,9 +1329,14 @@ function spToggleBucketType(bucketId, type){
   if(b){ b.type=type; renderScenarioPlanning(); }
 }
 
+function spRemoveByName(bucketId, name){
+  const b=spBuckets.find(x=>x.id===bucketId);
+  if(b){b.deals=b.deals.filter(n=>n!==name);renderScenarioPlanning();}
+}
 function spRemoveDeal(bucketId, dealId){
+  const name=deals.find(d=>d.id===dealId)?.name;
   const b = spBuckets.find(x=>x.id===bucketId);
-  if(b){ b.deals=b.deals.filter(id=>id!==dealId); renderScenarioPlanning(); }
+  if(b&&name){ b.deals=b.deals.filter(n=>n!==name); renderScenarioPlanning(); }
 }
 
 function spDragStart(e, dealId){
@@ -1344,8 +1352,9 @@ function spDrop(e, bucketId){
   document.querySelectorAll('.sp-bucket').forEach(b=>b.classList.remove('drag-over'));
   if(spDragDealId===null)return;
   const b=spBuckets.find(x=>x.id===bucketId);
-  if(b&&!b.deals.includes(spDragDealId)){
-    b.deals.push(spDragDealId);
+  const dragName=deals.find(d=>d.id===spDragDealId)?.name;
+  if(b&&dragName&&!b.deals.includes(dragName)){
+    b.deals.push(dragName);
     renderScenarioPlanning();
   }
   spDragDealId=null;
@@ -1438,17 +1447,19 @@ function renderScenarioPlanning(){
   spBuckets.forEach((b,i)=>{
     const contrib=spGetBucketContrib(b);
     const color=BUCKET_COLORS[b.id];
-    const dealCards=b.deals.map(id=>{
-      const d=deals.find(x=>x.id===id);
-      if(!d)return'';
+    const dealCards=b.deals.map(name=>{
+      const d=deals.find(x=>x.name===name);
+      const displayName=name;
+      const displayArr=d?fmtK(d.arr):'—';
+      const dealId=d?d.id:null;
       return`<div class="sp-bucket-deal">
-        <span class="sp-bucket-deal-name">${d.name}</span>
-        <span class="sp-bucket-deal-arr">${fmtK(d.arr)}</span>
-        <button class="sp-remove" onclick="event.stopPropagation();spRemoveDeal('${b.id}',${id})">×</button>
+        <span class="sp-bucket-deal-name">${displayName}</span>
+        <span class="sp-bucket-deal-arr">${displayArr}</span>
+        ${dealId?`<button class="sp-remove" onclick="event.stopPropagation();spRemoveDeal('${b.id}',${dealId})">×</button>`:`<button class="sp-remove" onclick="event.stopPropagation();spRemoveByName('${b.id}','${name.replace(/'/g,"\'")}')">×</button>`}
       </div>`;
     }).join('');
 
-    bucketHtml+=`<div class="sp-bucket" id="bucket-${b.id}"
+    bucketHtml+=`<div class="sp-bucket" id="bucket-${b.id}" style="${b.id==='b4'?'flex:2;min-height:160px;':''}"
       ondragover="event.preventDefault();this.classList.add('drag-over')"
       ondragleave="this.classList.remove('drag-over')"
       ondrop="spDrop(event,'${b.id}')">
