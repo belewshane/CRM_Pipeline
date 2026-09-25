@@ -1379,14 +1379,39 @@ async function saveScenarioPlanning(){
 
 async function loadScenarioPlanning(){
   const DEFAULT_BUCKETS=['b1','b2','b3','b4'];
+
+  // Convert old ID-based deals array to name-based using all deals across snapshots
+  async function normalizeBucketDeals(dealEntries){
+    if(!dealEntries.length)return[];
+    const hasIds=dealEntries.some(e=>typeof e==='number');
+    if(!hasIds)return dealEntries; // already names
+    // Fetch all deals (all snapshots) to map IDs to names
+    let allDealsMap={};
+    try{
+      const allRows=await sbGet('deals','select=id,name');
+      allRows.forEach(r=>{allDealsMap[r.id]=r.name;});
+    }catch(e){}
+    return dealEntries.map(entry=>{
+      if(typeof entry==='string')return entry;
+      return allDealsMap[entry]||null;
+    }).filter(Boolean);
+  }
+
   try{
     const rows=await sbGet('scenarios','select=*&name=eq.sp_planning');
     if(rows.length){
       const data=JSON.parse(rows[0].deal_ids||'{}');
       if(data.buckets){
-        // Merge: keep saved bucket data but ensure all 4 buckets exist
         const savedMap=Object.fromEntries(data.buckets.map(b=>[b.id,b]));
-        spBuckets=DEFAULT_BUCKETS.map(id=>savedMap[id]||{id,type:1,deals:[]});
+        const normalized=await Promise.all(DEFAULT_BUCKETS.map(async id=>{
+          const saved=savedMap[id];
+          if(!saved)return{id,type:1,deals:[]};
+          return{...saved,deals:await normalizeBucketDeals(saved.deals||[])};
+        }));
+        spBuckets=normalized;
+        // If we converted from IDs, re-save as names immediately
+        const hadIds=data.buckets.some(b=>b.deals?.some(d=>typeof d==='number'));
+        if(hadIds)saveScenarioPlanning();
       }
       if(data.target)setTimeout(()=>{const inp=document.getElementById('sp-target');if(inp)inp.value=data.target;},100);
       return;
@@ -1397,7 +1422,12 @@ async function loadScenarioPlanning(){
     const data=JSON.parse(s);
     if(data.buckets){
       const savedMap=Object.fromEntries(data.buckets.map(b=>[b.id,b]));
-      spBuckets=DEFAULT_BUCKETS.map(id=>savedMap[id]||{id,type:1,deals:[]});
+      const normalized=await Promise.all(DEFAULT_BUCKETS.map(async id=>{
+        const saved=savedMap[id];
+        if(!saved)return{id,type:1,deals:[]};
+        return{...saved,deals:await normalizeBucketDeals(saved.deals||[])};
+      }));
+      spBuckets=normalized;
     }
     if(data.target)setTimeout(()=>{const inp=document.getElementById('sp-target');if(inp)inp.value=data.target;},100);
   }
