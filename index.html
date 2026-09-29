@@ -243,7 +243,7 @@
   .metric-auto{font-size:10px;color:var(--text3);font-style:italic;}
 
   /* Scenario planning */
-  .sp-layout{display:grid;grid-template-columns:1fr 1fr;gap:12px;height:calc(100vh - 220px);}
+  .sp-layout{display:grid;grid-template-columns:1fr 1fr;gap:12px;height:calc(100vh - 200px);}
   .sp-left{overflow-y:auto;}
   .sp-right{display:flex;flex-direction:column;gap:10px;overflow-y:auto;}
   .sp-deal-row{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);cursor:grab;transition:all .12s;font-size:12px;}
@@ -253,7 +253,7 @@
   .sp-deal-row.in-bucket-b3{border-left:3px solid #993556;}
   .sp-deal-name{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .sp-deal-arr{font-size:11px;font-family:'DM Mono',monospace;color:var(--text2);}
-  .sp-bucket{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px;display:flex;flex-direction:column;gap:6px;min-height:80px;flex:1;}
+  .sp-bucket{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px;display:flex;flex-direction:column;gap:6px;min-height:160px;flex:1;}
   .sp-bucket.drag-over{border-color:var(--border2);outline:2px dashed var(--border2);}
   .sp-bucket-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
   .sp-bucket-label{font-size:11px;font-weight:600;color:var(--text2);}
@@ -1380,20 +1380,16 @@ async function saveScenarioPlanning(){
 async function loadScenarioPlanning(){
   const DEFAULT_BUCKETS=['b1','b2','b3','b4'];
 
-  // Convert old ID-based deals array to name-based using all deals across snapshots
-  async function normalizeBucketDeals(dealEntries){
+  // Convert old ID-based deals array to name-based using CURRENT snapshot only
+  function normalizeBucketDeals(dealEntries){
     if(!dealEntries.length)return[];
     const hasIds=dealEntries.some(e=>typeof e==='number');
     if(!hasIds)return dealEntries; // already names
-    // Fetch all deals (all snapshots) to map IDs to names
-    let allDealsMap={};
-    try{
-      const allRows=await sbGet('deals','select=id,name');
-      allRows.forEach(r=>{allDealsMap[r.id]=r.name;});
-    }catch(e){}
+    // Only map to deals in the current snapshot — drop anything not active
     return dealEntries.map(entry=>{
       if(typeof entry==='string')return entry;
-      return allDealsMap[entry]||null;
+      const d=deals.find(x=>x.id===entry);
+      return d?d.name:null;
     }).filter(Boolean);
   }
 
@@ -1403,12 +1399,11 @@ async function loadScenarioPlanning(){
       const data=JSON.parse(rows[0].deal_ids||'{}');
       if(data.buckets){
         const savedMap=Object.fromEntries(data.buckets.map(b=>[b.id,b]));
-        const normalized=await Promise.all(DEFAULT_BUCKETS.map(async id=>{
+        spBuckets=DEFAULT_BUCKETS.map(id=>{
           const saved=savedMap[id];
           if(!saved)return{id,type:1,deals:[]};
-          return{...saved,deals:await normalizeBucketDeals(saved.deals||[])};
-        }));
-        spBuckets=normalized;
+          return{...saved,deals:normalizeBucketDeals(saved.deals||[])};
+        });
         // If we converted from IDs, re-save as names immediately
         const hadIds=data.buckets.some(b=>b.deals?.some(d=>typeof d==='number'));
         if(hadIds)saveScenarioPlanning();
@@ -1422,12 +1417,11 @@ async function loadScenarioPlanning(){
     const data=JSON.parse(s);
     if(data.buckets){
       const savedMap=Object.fromEntries(data.buckets.map(b=>[b.id,b]));
-      const normalized=await Promise.all(DEFAULT_BUCKETS.map(async id=>{
+      spBuckets=DEFAULT_BUCKETS.map(id=>{
         const saved=savedMap[id];
         if(!saved)return{id,type:1,deals:[]};
-        return{...saved,deals:await normalizeBucketDeals(saved.deals||[])};
-      }));
-      spBuckets=normalized;
+        return{...saved,deals:normalizeBucketDeals(saved.deals||[])};
+      });
     }
     if(data.target)setTimeout(()=>{const inp=document.getElementById('sp-target');if(inp)inp.value=data.target;},100);
   }
@@ -1489,7 +1483,7 @@ function renderScenarioPlanning(){
       </div>`;
     }).join('');
 
-    bucketHtml+=`<div class="sp-bucket" id="bucket-${b.id}" style="${b.id==='b4'?'flex:2;min-height:160px;':''}"
+    bucketHtml+=`<div class="sp-bucket" id="bucket-${b.id}" style="${b.id==='b4'?'flex:2;min-height:280px;':''}"
       ondragover="event.preventDefault();this.classList.add('drag-over')"
       ondragleave="this.classList.remove('drag-over')"
       ondrop="spDrop(event,'${b.id}')">
