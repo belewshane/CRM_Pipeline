@@ -1452,14 +1452,16 @@ function renderScenarioPlanning(){
       const borderColor=bucketId?BUCKET_COLORS[bucketId]:'transparent';
       const flags=getFlagDots(d.sentiment);
       const flagHtml=`<div class="flags">${flags.map(f=>`<div class="flag ${f}"></div>`).join('')}</div>`;
+      const rowBg=d.sentiment==='g'?'var(--green-row)':d.sentiment==='y'?'var(--yellow-row)':d.sentiment==='r'?'var(--red-row)':'var(--surface)';
+      const nameCol=d.sentiment==='g'?'var(--green-text)':d.sentiment==='y'?'var(--yellow-text)':d.sentiment==='r'?'var(--red-text)':'var(--text)';
       dealRows+=`<div class="sp-deal-row" id="sp-deal-${d.id}"
         draggable="true"
         ondragstart="spDragStart(event,${d.id})"
         ondragend="spDragEnd(event)"
-        style="border-left:3px solid ${borderColor};"
+        style="border-left:3px solid ${borderColor};background:${rowBg};"
         onclick="openDeal(${d.id})">
         ${flagHtml}
-        <span class="sp-deal-name">${d.name}</span>
+        <span class="sp-deal-name" style="color:${nameCol};">${d.name}</span>
         <span class="sp-deal-arr">${fmtK(d.arr)}</span>
         ${bucketId?`<span style="font-size:9px;color:${BUCKET_COLORS[bucketId]};font-weight:600;">B${bucketId.slice(1)}</span>`:''}
       </div>`;
