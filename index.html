@@ -253,7 +253,7 @@
   .sp-deal-row.in-bucket-b3{border-left:3px solid #993556;}
   .sp-deal-name{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .sp-deal-arr{font-size:11px;font-family:'DM Mono',monospace;color:var(--text2);}
-  .sp-bucket{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px;display:flex;flex-direction:column;gap:6px;min-height:160px;flex:1;}
+  .sp-bucket{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:10px;display:flex;flex-direction:column;gap:6px;min-height:220px;flex:1;}
   .sp-bucket.drag-over{border-color:var(--border2);outline:2px dashed var(--border2);}
   .sp-bucket-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
   .sp-bucket-label{font-size:11px;font-weight:600;color:var(--text2);}
@@ -1484,7 +1484,7 @@ function renderScenarioPlanning(){
       </div>`;
     }).join('');
 
-    bucketHtml+=`<div class="sp-bucket" id="bucket-${b.id}" style="${b.id==='b4'?'flex:2;min-height:280px;':''}"
+    bucketHtml+=`<div class="sp-bucket" id="bucket-${b.id}"
       ondragover="event.preventDefault();this.classList.add('drag-over')"
       ondragleave="this.classList.remove('drag-over')"
       ondrop="spDrop(event,'${b.id}')">
